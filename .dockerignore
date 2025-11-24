@@ -1,12 +1,59 @@
+# ---- Python / build caches ----
 __pycache__/
-*.py[cod]
+*.pyc
+*.pyo
+*.pyd
+*.log
+*.tmp
+*.swp
+*.swo
 *.egg-info/
+.eggs/
+.mypy_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+build/
+dist/
+
+# ---- Virtual environments ----
 .venv/
-.env
-*.sqlite*
-*.db
-/data/
-rolling_store.csv
-tests/
-.git/
+venv/
+env/
+ENV/
+.ipynb_checkpoints/
+
+# ---- IDE / Editor configs ----
+.vscode/
+.idea/
+*.code-workspace
+
+# ---- System / OS junk ----
 .DS_Store
+Thumbs.db
+
+# ---- Project artifacts ----
+artifacts/
+!artifacts/incidents/.gitkeep   # keep folder structure only
+data/mock_signals.json
+rolling_store.csv
+rolling_store.db
+
+# ---- Environment & secrets ----
+.env
+.env.*
+!.env.example
+
+# ---- Docker / Git internals ----
+Dockerfile
+.dockerignore
+.git/
+.gitignore
+
+# ---- Tests (excluded from runtime image) ----
+tests/
+notebooks/
+*.ipynb
+
+# ---- Streamlit cache (temporary) ----
+.streamlit/

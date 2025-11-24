@@ -1,62 +1,189 @@
+from __future__ import annotations
+
 import json
+import os
+import subprocess
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
+import pandas as pd
 import streamlit as st
 
-st.set_page_config(page_title="Drift Incidents", layout="wide")
+# ---- Config ----
+INCIDENTS_DIR = Path("artifacts/incidents")
+MODE = os.getenv("COHERENCE_MODE", "demo")
+REFRESH_MS = int(os.getenv("UI_REFRESH_MS", "3000"))
 
-INCIDENT_DIR = Path(__file__).resolve().parents[2] / "artifacts" / "incidents"
-INCIDENT_DIR.mkdir(parents=True, exist_ok=True)
+st.set_page_config(page_title="Trust Continuity Alerts", layout="wide")
 
-st.title("Drift Incidents")
-st.caption(f"Directory: {INCIDENT_DIR}")
+try:
+    if MODE == "demo":
+        from streamlit_autorefresh import st_autorefresh  # type: ignore
 
-files = sorted(INCIDENT_DIR.glob("incident_*.json"), reverse=True)
-if not files:
-    st.info("No incidents found yet. Run the drift agent to generate one:\n\n`make automation-drift`")
-    st.stop()
+        st_autorefresh(interval=REFRESH_MS, key="alerts_auto")
+except Exception:
+    pass
 
-# Summary table
-rows = []
-for f in files:
+
+# ---- Helpers ----
+@st.cache_data(show_spinner=False)
+def list_incident_files(directory: Path) -> List[Path]:
+    if not directory.exists():
+        return []
+    return sorted(directory.glob("*.json"))
+
+@st.cache_data(show_spinner=False)
+def load_json(path: Path) -> Optional[Dict[str, Any]]:
     try:
-        data = json.loads(f.read_text())
-        assess = data.get("assessment", [])
-        crit = sum(1 for a in assess if a.get("level") == "CRITICAL")
-        warn = sum(1 for a in assess if a.get("level") == "WARN")
-        rows.append({
-            "file": f.name,
-            "created_at": data.get("created_at"),
-            "window": data.get("window"),
-            "warnings": warn,
-            "critical": crit,
-        })
+        with path.open("r", encoding="utf-8") as f:
+            return json.load(f)
     except Exception:
-        rows.append({"file": f.name, "created_at": "?", "window": "?", "warnings": "?", "critical": "?"})
+        return None
 
-st.subheader("Recent Incidents")
-st.dataframe(rows, use_container_width=True)
+@st.cache_data(show_spinner=False)
+def load_all(directory: Path) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    for p in list_incident_files(directory):
+        obj = load_json(p)
+        if obj:
+            out.append(obj)
+    return out
 
-# Details
-choice = st.selectbox("Open incident", [r["file"] for r in rows])
-selected = INCIDENT_DIR / choice
-data = json.loads(selected.read_text())
+def parse_ts(ts: str) -> Optional[datetime]:
+    try:
+        return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    except Exception:
+        return None
 
-st.subheader("Incident Details")
-col1, col2 = st.columns([1, 2])
-with col1:
-    st.write({"created_at": data.get("created_at"), "window": data.get("window"), "api_base": data.get("api_base")})
-with col2:
-    st.json(data.get("agent", {}))
+def arrow_sanitize(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    for col in df.columns:
+        if df[col].dtype == "object":
+            if df[col].map(lambda x: isinstance(x, (bytes, bytearray))).any():
+                df[col] = df[col].apply(
+                    lambda x: x.decode("utf-8", "ignore") if isinstance(x, (bytes, bytearray)) else x
+                )
+            if df[col].map(type).nunique() > 1:
+                df[col] = df[col].astype("string")
+        if col.lower() in {"value", "signalstability", "signalliquidity"}:
+            df[col] = pd.to_numeric(df[col], errors="ignore")
+    return df
+
+def summarize(incidents: List[Dict[str, Any]]) -> Tuple[int, int, int, Optional[datetime]]:
+    total = 0
+    hi = 0
+    med = 0
+    last: Optional[datetime] = None
+    for inc in incidents:
+        risk = inc.get("trustContinuityRisk") or inc.get("trustContinuityRiskLevel")
+        ts = inc.get("timestamp") or inc.get("created_at")
+        dt = parse_ts(ts) if ts else None
+
+        total += 1
+        if isinstance(risk, str):
+            r = risk.lower()
+            if r == "high":
+                hi += 1
+            elif r == "medium":
+                med += 1
+        if dt:
+            last = max(last, dt) if last else dt
+    return total, hi, med, last
+
+def sorted_newest(incidents: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def key(i: Dict[str, Any]) -> float:
+        ts = i.get("timestamp") or i.get("created_at")
+        dt = parse_ts(ts) if ts else None
+        return dt.timestamp() if dt else 0.0
+    return sorted(incidents, key=key, reverse=True)
+
+def emit_demo_alert(window: str = "1h", min_level: str = "low") -> str:
+    """
+    Tries to call the Phase-2 automation locally:
+    python -m automation.drift_sentry --window 1h --min-level low
+    """
+    try:
+        proc = subprocess.run(
+            ["python", "-m", "automation.drift_sentry", "--window", window, "--min-level", min_level],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return (proc.stdout or proc.stderr).strip()
+    except Exception as e:
+        return f"Failed to emit demo alert: {e}"
+
+
+# ---- UI ----
+st.title("Trust Continuity Alerts")
+st.caption("Ledger-ready incidents emitted by the Coherence Engine. Fields: signalStability, signalLiquidity, trustContinuityRisk, window, trace.")
+
+# Demo button (optional)
+with st.sidebar:
+    st.subheader("Demo")
+    if st.button("Generate Sample Alert (low, 1h)"):
+        msg = emit_demo_alert("1h", "low")
+        st.toast("Triggered. Check incidents list.")
+        st.code(msg or "No output.")
+
+incidents = load_all(INCIDENTS_DIR)
+total, high, medium, last_dt = summarize(incidents)
+
+# KPIs
+c1, c2, c3, c4 = st.columns([1, 1, 1, 1.3])
+with c1:
+    st.metric("Total Alerts", total)
+with c2:
+    st.metric("High", high)
+with c3:
+    st.metric("Medium", medium)
+with c4:
+    st.metric("Last Alert (UTC)", last_dt.isoformat().replace("+00:00", "Z") if last_dt else "—")
 
 st.divider()
-st.subheader("Assessment (signals breaching thresholds)")
-assessment = data.get("assessment", [])
-if assessment:
-    st.dataframe([{k: v for k, v in a.items() if k != "details"} for a in assessment], use_container_width=True)
+st.markdown("**Labels per Phase-2:** Signal **Stability**, Signal **Liquidity**, **Trust Continuity Risk**.")
+
+if not incidents:
+    st.info("No incidents found yet. When incidents are emitted, they will appear here.")
 else:
-    st.success("No WARN/CRITICAL signals in this incident.")
+    # Summary table
+    rows = []
+    for inc in incidents:
+        ts = inc.get("timestamp") or inc.get("created_at") or "—"
+        rows.append({
+            "Timestamp": ts,
+            "Window": inc.get("window", "—"),
+            "Signal Stability": inc.get("signalStability", inc.get("interactionStability", "—")),
+            "Signal Liquidity": inc.get("signalLiquidity", inc.get("signalVolatility", "—")),
+            "Risk": inc.get("trustContinuityRisk", inc.get("trustContinuityRiskLevel", "—")),
+            "Event": inc.get("event", "trust_continuity_alert"),
+        })
+    df = arrow_sanitize(pd.DataFrame(rows))
+    st.subheader("Alerts (Table)")
+    st.dataframe(df, use_container_width=True)
 
-st.divider()
-with st.expander("Raw JSON (full snapshot)"):
-    st.code(selected.read_text(), language="json")
+    st.subheader("Alerts (Cards)")
+    for inc in sorted_newest(incidents):
+        with st.container(border=True):
+            event = inc.get("event", "trust_continuity_alert")
+            ts = inc.get("timestamp") or inc.get("created_at") or "—"
+            window = inc.get("window", "—")
+            stability = inc.get("signalStability", inc.get("interactionStability", "—"))
+            liquidity = inc.get("signalLiquidity", inc.get("signalVolatility", "—"))
+            risk = inc.get("trustContinuityRisk", inc.get("trustContinuityRiskLevel", "—"))
+            trace = inc.get("trace", {})
 
+            left, right = st.columns([2, 1])
+            with left:
+                st.subheader(event.replace("_", " ").title())
+                st.write(f"**Timestamp (UTC):** {ts}")
+                st.write(f"**Window:** {window}")
+                st.write(f"**Signal Stability:** {stability}")
+                st.write(f"**Signal Liquidity:** {liquidity}")
+                st.write(f"**Trust Continuity Risk:** {risk}")
+            with right:
+                st.caption("Trace")
+                st.json(trace, expanded=False)
+
+    st.caption(f"Folder: `{INCIDENTS_DIR}` · Mode: `{MODE}`")

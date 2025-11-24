@@ -1,79 +1,144 @@
-# Makefile — Data Coherence Engine
+# Makefile — Coherence Engine (Phase 2)
 
 SHELL := /bin/bash
 PY := $(shell command -v python3 || command -v python)
 VENV := .venv
-ACTIVATE := . $(VENV)/bin/activate;
+VENV_BIN := $(VENV)/bin
+PIP := $(VENV_BIN)/pip
+PYTHON := $(VENV_BIN)/python
+
 APP_HOST := 0.0.0.0
 APP_PORT := 8000
-ENV_EXAMPLE := .env.example
+APP_MODULE := app.api:app
+
 ENV_FILE := .env
+ENV_EXAMPLE := .env.example
+INCIDENTS_DIR := /app/artifacts
+DOCKER_IMAGE := coherence-engine:latest
 
-export PERSISTENCE ?= csv
-export CSV_PATH ?= rolling_store.csv
-export SQLITE_PATH ?= rolling_store.db
+.DEFAULT_GOAL := help
 
+# -------------------------
+# Helpers
+# -------------------------
 
-.PHONY: install run test lint format clean streamlit env health status deps dev-freeze ingest
+$(ENV_FILE):
+	@echo "[make] Creating $(ENV_FILE) with default coherence settings"
+	@echo "COHERENCE_MODE=demo" > $(ENV_FILE)
+	@echo "COHERENCE_WARN_THRESHOLD=0.10" >> $(ENV_FILE)
+	@echo "COHERENCE_CRITICAL_THRESHOLD=0.25" >> $(ENV_FILE)
+	@echo "TREND_SENSITIVITY=0.02" >> $(ENV_FILE)
+	@echo "STABILITY_HIGH_MIN=0.80" >> $(ENV_FILE)
+	@echo "STABILITY_MEDIUM_MIN=0.55" >> $(ENV_FILE)
+	@echo "UI_REFRESH_MS=3000" >> $(ENV_FILE)
+	@echo "API_BASE=http://$(APP_HOST):$(APP_PORT)" >> $(ENV_FILE)
+	@echo "[make] Wrote defaults to $(ENV_FILE)"
 
+# Create venv + install deps if needed
+$(VENV): requirements.txt
+	@echo "[make] Creating virtualenv at $(VENV)"
+	@$(PY) -m venv $(VENV)
+	@echo "[make] Installing dependencies"
+	@. $(VENV_BIN)/activate; pip install -r requirements.txt
 
-# Setup & Installation
+# -------------------------
+# Core dev targets
+# -------------------------
 
-install:
-	$(PY) -m venv $(VENV)
-	$(ACTIVATE) pip install -U pip
-	$(ACTIVATE) pip install -r requirements.txt
-	@test -f $(ENV_FILE) || (cp $(ENV_EXAMPLE) $(ENV_FILE) && echo "Created $(ENV_FILE) from $(ENV_EXAMPLE)")
+help:
+	@echo "Available targets:"
+	@grep -E '^[a-zA-Z0-9_-]+:.*$$' Makefile | sed 's/:.*//' | sort -u
 
-deps:
-	$(ACTIVATE) pip install -U pip
-	$(ACTIVATE) pip install -r requirements.txt
+venv: $(VENV)
 
-dev-freeze:
-	$(ACTIVATE) pip freeze > requirements-freeze.txt
+env: $(ENV_FILE)
 
+test: $(ENV_FILE) $(VENV)
+	@echo "[make] Running tests"
+	@. $(VENV_BIN)/activate; pytest -q
 
-# Run & Verification
+fmt: $(VENV)
+	@echo "[make] Formatting with black"
+	@. $(VENV_BIN)/activate; black app automation streamlit_app tests
 
-run:
-	$(ACTIVATE) uvicorn app.api:app --host $(APP_HOST) --port $(APP_PORT) --reload
+lint: $(VENV)
+	@echo "[make] Linting with pylint"
+	@. $(VENV_BIN)/activate; pylint app
 
-streamlit:
-	$(ACTIVATE) API_BASE="http://localhost:8000" streamlit run streamlit_app/app.py
+# -------------------------
+# API & UI
+# -------------------------
 
-automation-drift:
-	$(ACTIVATE) python -m automation.drift_sentry --window 24h --fail-on-critical
+api: $(ENV_FILE) $(VENV)
+	@echo "[make] Starting FastAPI on $(APP_HOST):$(APP_PORT)"
+	@. $(VENV_BIN)/activate; uvicorn $(APP_MODULE) --host $(APP_HOST) --port $(APP_PORT) --reload
 
+ui: $(ENV_FILE) $(VENV)
+	@echo "[make] Starting Streamlit dashboard"
+	@. $(VENV_BIN)/activate; streamlit run streamlit_app/app.py
 
-# Testing & Quality
+# -------------------------
+# Metrics & status helpers
+# -------------------------
 
-test:
-	$(ACTIVATE) pytest -v
+metrics:
+	@echo "[make] GET /coherence/metrics (default include_legacy=true)"
+	@curl -s "http://$(APP_HOST):$(APP_PORT)/coherence/metrics" | python -m json.tool
 
-test-persistence:
-	$(ACTIVATE) pytest -q tests/test_persistence.py tests/test_history_api.py
+metrics_new:
+	@echo "[make] GET /coherence/metrics?include_legacy=false"
+	@curl -s "http://$(APP_HOST):$(APP_PORT)/coherence/metrics?include_legacy=false" | python -m json.tool
 
-lint:
-	$(ACTIVATE) black --check .
-	$(ACTIVATE) pylint $$(git ls-files '*.py')
-
-format:
-	$(ACTIVATE) black .
-
-
-# Utilities
-
-env:
-	@test -f $(ENV_FILE) || (cp $(ENV_EXAMPLE) $(ENV_FILE) && echo "Created $(ENV_FILE) from $(ENV_EXAMPLE)")
+metrics_legacy:
+	@echo "[make] GET /coherence/metrics?include_legacy=true"
+	@curl -s "http://$(APP_HOST):$(APP_PORT)/coherence/metrics?include_legacy=true" | python -m json.tool
 
 health:
-	curl -s http://localhost:$(APP_PORT)/health | python -m json.tool
+	@echo "[make] GET /health"
+	@curl -s "http://$(APP_HOST):$(APP_PORT)/health" || true
+	@echo
 
 status:
-	curl -s http://localhost:$(APP_PORT)/status | python -m json.tool
+	@echo "[make] GET /status"
+	@curl -s "http://$(APP_HOST):$(APP_PORT)/status" | python -m json.tool || true
 
-ingest:
-	curl -s "http://localhost:$(APP_PORT)/ingest/run" | python -m json.tool
+# -------------------------
+# Automation / incidents
+# -------------------------
+
+automation-drift: $(ENV_FILE) $(VENV)
+	@echo "[make] Running drift_sentry once (24h window, low min-level)"
+	@. $(VENV_BIN)/activate; $(PYTHON) -m automation.drift_sentry --window 24h --min-level low
+
+automation-demo: $(ENV_FILE) $(VENV)
+	@echo "[make] Running drift_sentry in demo mode (1h window, low min-level, dry-run)"
+	@. $(VENV_BIN)/activate; $(PYTHON) -m automation.drift_sentry --window 1h --min-level low --dry-run
+
+# -------------------------
+# Docker
+# -------------------------
+
+docker-build:
+	@echo "[make] Building docker image $(DOCKER_IMAGE)"
+	@docker build -t $(DOCKER_IMAGE) .
+
+docker-run:
+	@echo "[make] Running docker image $(DOCKER_IMAGE)"
+	@docker run --rm \
+		-p $(APP_PORT):8000 \
+		-e COHERENCE_MODE=demo \
+		-v "$$(pwd)/artifacts:$(INCIDENTS_DIR)" \
+		$(DOCKER_IMAGE)
+
+# -------------------------
+# Cleanup
+# -------------------------
 
 clean:
-	rm -rf $(VENV) __pycache__ .pytest_cache .mypy_cache .coverage *.pyc
+	@echo "[make] Cleaning venv, caches, and incident JSON"
+	@rm -rf $(VENV) .pytest_cache __pycache__
+	@find app automation streamlit_app tests -name '__pycache__' -type d -exec rm -rf {} +
+	@rm -f artifacts/incidents/*.json || true
+
+.PHONY: help venv env test fmt lint api ui metrics metrics_new metrics_legacy health status \
+        automation-drift automation-demo docker-build docker-run clean

@@ -1,200 +1,120 @@
-import os
+from __future__ import annotations
+
 import json
-import time
-import sqlite3
-from pathlib import Path
+import os
+from datetime import datetime, timezone
+from typing import Any, Dict, Optional
 
 import pandas as pd
-import requests
 import streamlit as st
-from typing import Optional, Tuple
+import urllib.request
+import urllib.error
 
-# Configuration
+# ---- Config ----
 API_BASE = os.getenv("API_BASE", "http://localhost:8000")
-PERSISTENCE = os.getenv("PERSISTENCE", "csv")
+MODE = os.getenv("COHERENCE_MODE", "demo")
+REFRESH_MS = int(os.getenv("UI_REFRESH_MS", "3000"))
 
-ROOT = Path(__file__).resolve().parents[1]
-CSV_PATH = ROOT / "rolling_store.csv"
-SQLITE_PATH = ROOT / "rolling_store.db"
-SQLITE_TABLE = "rolling_metrics"
+st.set_page_config(page_title="Coherence Operations Console", layout="wide")
 
-# Helpers
-@st.cache_data(ttl=10)
-def fetch_json(endpoint: str, params: dict | None = None, api_base: str | None = None):
-    try:
-        base = (api_base or API_BASE).rstrip("/")
-        url = f"{base}/{endpoint.lstrip('/')}"
-        r = requests.get(url, params=params or {}, timeout=8)
-        r.raise_for_status()
-        return r.json()
-    except Exception as e:
-        return {"error": str(e)}
+try:
+    if MODE == "demo":
+        from streamlit_autorefresh import st_autorefresh  # type: ignore
 
-TIME_CANDIDATES = ["timestamp", "time", "ts", "created_at", "datetime", "date"]
-MEAN_CANDIDATES = ["coherenceMean", "coherence_mean", "mean"]
-VOL_CANDIDATES  = ["volatilityIndex", "volatility_index", "volatility", "stdev"]
+        st_autorefresh(interval=REFRESH_MS, key="metrics_auto")
+except Exception:
+    pass
 
-def _pick_col(cols: list[str], candidates: list[str]) -> Optional[str]:
-    lower = {c.lower(): c for c in cols}
-    for name in candidates:
-        if name in cols:
-            return name
-        if name.lower() in lower:
-            return lower[name.lower()]
-    return None
 
-def load_history(persistence: str) -> Tuple[Optional[pd.DataFrame], dict]:
-    """
-    Returns (df, info) where df may be None.
-    info has keys: path, columns, picked_time, picked_mean, picked_vol
-    """
-    info = {"path": None, "columns": [], "picked_time": None, "picked_mean": None, "picked_vol": None}
+# ---- Helpers ----
+@st.cache_data(show_spinner=False)
+def fetch_json(url: str, timeout: int = 8) -> Dict[str, Any]:
+    req = urllib.request.Request(url, headers={"Accept": "application/json"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.loads(r.read().decode("utf-8"))
 
-    if persistence == "csv" and CSV_PATH.exists():
-        df = pd.read_csv(CSV_PATH, engine="python", on_bad_lines="skip")
-        info["path"] = str(CSV_PATH)
-    elif persistence == "sqlite" and SQLITE_PATH.exists():
-        with sqlite3.connect(SQLITE_PATH) as conn:
-            df = pd.read_sql_query(f"SELECT * FROM {SQLITE_TABLE}", conn)
-        info["path"] = str(SQLITE_PATH)
-    else:
-        return None, info
 
-    info["columns"] = list(df.columns)
+def arrow_sanitize(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    for col in df.columns:
+        if df[col].dtype == "object":
+            if df[col].map(lambda x: isinstance(x, (bytes, bytearray))).any():
+                df[col] = df[col].apply(
+                    lambda x: x.decode("utf-8", "ignore") if isinstance(x, (bytes, bytearray)) else x
+                )
+            # if mixed object types remain, cast to string
+            if df[col].map(type).nunique() > 1:
+                df[col] = df[col].astype("string")
+        if col.lower() in {"value", "interactionstability", "signalvolatility"}:
+            df[col] = pd.to_numeric(df[col], errors="ignore")
+    return df
 
-    # pick columns
-    tcol = _pick_col(df.columns.tolist(), TIME_CANDIDATES)
-    mcol = _pick_col(df.columns.tolist(), MEAN_CANDIDATES)
-    vcol = _pick_col(df.columns.tolist(), VOL_CANDIDATES)
 
-    info["picked_time"] = tcol
-    info["picked_mean"] = mcol
-    info["picked_vol"]  = vcol
+def metrics_endpoint(base: str, window_sec: int, include_legacy: bool) -> str:
+    return f"{base}/coherence/metrics?window={window_sec}&include_legacy={'true' if include_legacy else 'false'}"
 
-    # try to construct a datetime index
-    if tcol is not None:
-        df[tcol] = pd.to_datetime(df[tcol], errors="coerce", utc=True)
-        df = df.sort_values(tcol)
-        df = df.set_index(tcol)
-        df.index.name = "timestamp"
-    else:
-        # try index if it looks like time
-        if isinstance(df.index, pd.DatetimeIndex):
-            df = df.sort_index()
-            df.index.name = "timestamp"
-        else:
-            # last resort: convert the first column if it parses like time
-            first = df.columns[0]
-            maybe = pd.to_datetime(df[first], errors="coerce", utc=True)
-            if maybe.notna().any():
-                df[first] = maybe
-                df = df.sort_values(first).set_index(first)
-                df.index.name = "timestamp"
-            else:
-                # no time information; fabricate a monotonic index
-                df.index = pd.RangeIndex(start=0, stop=len(df), step=1, name="row")
 
-    # normalize metric names for plotting convenience
-    if mcol and "coherenceMean" not in df.columns:
-        df.rename(columns={mcol: "coherenceMean"}, inplace=True)
-    if vcol and "volatilityIndex" not in df.columns:
-        df.rename(columns={vcol: "volatilityIndex"}, inplace=True)
+# ---- Sidebar Controls ----
+st.sidebar.title("Controls")
+api_base = st.sidebar.text_input("API Base", value=API_BASE, help="Where the FastAPI service is running.")
+window_sec = st.sidebar.number_input("Window (sec)", min_value=60, step=60, value=86400)
+include_legacy = st.sidebar.toggle("Show legacy fields", value=False)
+st.sidebar.caption(f"Mode: **{MODE}** · Auto-refresh: **{REFRESH_MS} ms** (demo)")
 
-    return df, info
+# ---- Fetch and Render Metrics ----
+st.title("Coherence Operations Console")
+st.caption("Phase-2 semantics: **Signal Stability**, **Signal Liquidity**, **Trust Continuity Risk**, **Trend**")
 
-def risk_badge(risk: str):
-    colors = {"low": "#16a34a", "medium": "#f59e0b", "high": "#dc2626"}
-    color = colors.get(str(risk).lower(), "#6b7280")
-    return f"<span style='background:{color};color:white;padding:4px 10px;border-radius:999px;font-weight:600'>{risk}</span>"
+url = metrics_endpoint(api_base, int(window_sec), include_legacy)
+error_box = st.empty()
 
-# UI
-st.set_page_config(page_title="Coherence Verification", page_icon="✅", layout="wide")
-st.title("Coherence Engine Verification")
+try:
+    payload = fetch_json(url)
+    error_box.empty()
+except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError) as e:
+    error_box.error(f"Could not reach API: {e}")
+    st.stop()
 
-with st.sidebar:
-    st.subheader("Controls")
-    api_base = st.text_input("API Base", value=API_BASE)
-    window = st.selectbox("Window", ["5m", "1h", "24h"], index=1)
-    persistence = st.selectbox("Persistence", ["csv", "sqlite", "none"], index=0)
-    refresh = st.button("Refresh")
+# Pull Phase-2 fields with graceful fallbacks
+stability = payload.get("interactionStability") or payload.get("coherenceMean")
+volatility = payload.get("signalVolatility") or payload.get("volatilityIndex")
+risk = payload.get("trustContinuityRiskLevel") or payload.get("predictedDriftRisk")
+trend = payload.get("coherenceTrend", "—")
+interp = payload.get("interpretation", {})
+meta = payload.get("meta", {})
 
-# Health & Status
-col1, col2 = st.columns(2)
-with col1:
-    st.subheader("Health")
-    data = fetch_json("health", api_base=api_base) if not refresh else fetch_json.clear() or fetch_json("health", api_base=api_base)
-    st.json(data)
-with col2:
-    st.subheader("Status")
-    data = fetch_json("status", api_base=api_base) if not refresh else fetch_json.clear() or fetch_json("status", api_base=api_base)
-    st.json(data)
+# KPIs
+c1, c2, c3, c4 = st.columns(4)
+with c1:
+    st.metric("Signal Stability", f"{stability:.4f}" if isinstance(stability, (int, float)) else str(stability))
+with c2:
+    st.metric("Signal Liquidity", f"{volatility:.4f}" if isinstance(volatility, (int, float)) else str(volatility))
+with c3:
+    st.metric("Trust Continuity Risk", str(risk).capitalize() if risk else "—")
+with c4:
+    st.metric("Trend", trend)
 
 st.divider()
 
-# Metrics
-st.subheader("Latest Metrics")
-metrics = (
-    fetch_json("coherence/metrics", {"window": window}, api_base=api_base)
-    if not refresh else fetch_json.clear() or fetch_json("coherence/metrics", {"window": window}, api_base=api_base)
-)
+# Interpretation table
+interp_rows = [
+    {"Metric": "Stability Band", "Label": interp.get("stability", "—")},
+    {"Metric": "Trust Continuity", "Label": interp.get("trustContinuity", "—")},
+    {"Metric": "Trend", "Label": interp.get("coherenceTrend", trend)},
+]
+df_interp = arrow_sanitize(pd.DataFrame(interp_rows))
+st.subheader("Interpretation")
+st.dataframe(df_interp, use_container_width=True)
 
-if "error" in metrics:
-    st.error(f"Failed to fetch latest metrics: {metrics['error']}")
-else:
-    cols = st.columns(4)
-    cols[0].metric("Mean", f"{metrics.get('coherenceMean', '—')}")
-    cols[1].metric("Volatility", f"{metrics.get('volatilityIndex', '—')}")
-    cols[2].metric("WindowSec", f"{metrics.get('windowSec', '—')}")
-    cols[3].metric("N", f"{metrics.get('n', '—')}")
-    st.markdown(
-        f"**Risk:** {risk_badge(metrics.get('predictedDriftRisk', 'unknown'))}",
-        unsafe_allow_html=True
-    )
-    st.download_button(
-        "Download latest JSON",
-        data=json.dumps(metrics, indent=2),
-        file_name=f"coherence_latest_{window}.json",
-        mime="application/json",
-        use_container_width=True,
-    )
+# Meta + Raw JSON
+left, right = st.columns([1, 1])
+with left:
+    st.subheader("Meta")
+    meta_rows = [{"Key": k, "Value": v} for k, v in meta.items()]
+    df_meta = arrow_sanitize(pd.DataFrame(meta_rows))
+    st.dataframe(df_meta, use_container_width=True)
+with right:
+    with st.expander("Raw JSON"):
+        st.json(payload, expanded=False)
 
-# History
-st.subheader("Historical View")
-
-df, info = load_history(persistence)
-with st.expander("Schema inspector (debug)", expanded=False):
-    st.write({"path": info.get("path"), "columns": info.get("columns"),
-              "picked_time": info.get("picked_time"),
-              "picked_mean": info.get("picked_mean"),
-              "picked_vol": info.get("picked_vol")})
-
-if df is None:
-    st.info(f"No persisted data found for mode `{persistence}`.")
-else:
-    csv_bytes = df.to_csv().encode("utf-8")
-    st.download_button(
-        "Download history (CSV)",
-        data=csv_bytes,
-        file_name="coherence_history.csv",
-        mime="text/csv",
-        use_container_width=True,
-    )
-
-    # plot if columns exist
-    plot_cols = []
-    if "coherenceMean" in df.columns:
-        st.caption("Coherence Mean over time")
-        st.line_chart(df[["coherenceMean"]])
-        plot_cols.append("coherenceMean")
-    if "volatilityIndex" in df.columns:
-        st.caption("Volatility Index over time")
-        st.line_chart(df[["volatilityIndex"]])
-        plot_cols.append("volatilityIndex")
-
-    if not plot_cols:
-        st.warning(
-            "Could not find expected metric columns to plot "
-            "(looked for any of: "
-            f"{MEAN_CANDIDATES} and {VOL_CANDIDATES}). "
-            "Use the Schema inspector above to see what's in your store."
-        )
+st.caption(f"Source: `{url}` · Timestamp: {datetime.now(timezone.utc).isoformat()}`")

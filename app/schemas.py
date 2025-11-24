@@ -1,42 +1,35 @@
-from __future__ import annotations
-from typing import Literal, Optional, List
 from pydantic import BaseModel, Field
-from datetime import datetime
+from typing import Optional, Dict, Literal, Any
 
-class MetricsResponse(BaseModel):
-    coherenceMean: float
-    volatilityIndex: float
-    predictedDriftRisk: Literal["low", "medium", "high"]
-    timestamp: datetime
-    windowSec: int
-    n: int
-    inputs: dict
-    meta: dict
+class CoherenceMetricsResponse(BaseModel):
+    """
+    Phase 2 Coherence metrics response model.
+    """
 
-class MetricsRecord(BaseModel):
-    ts_utc: datetime = Field(..., description="Computation timestamp in UTC")
-    window_sec: int
-    n: int
-    mean: float
-    stdev: float
-    drift_risk: Literal["low", "medium", "high"]
-    source: str = "darshan_api"
-    request_id: Optional[str] = None
+    # --- Phase 2 fields (canonical) ---
+    interactionStability: float = Field(..., description="Rolling mean of stability")
+    signalVolatility: float = Field(..., description="Normalized volatility (stdev/mean)")
+    trustContinuityRiskLevel: Literal["low", "medium", "high"] = Field(
+        ..., description="Risk derived from signal volatility"
+    )
+    coherenceTrend: Literal["Improving", "Steady", "Deteriorating"] = Field(
+        ..., description="Trend label across the window"
+    )
 
-class StatusResponse(BaseModel):
-    status: str
-    version: str
-    uptime_sec: Optional[float] = None
-    start_time: Optional[str] = None
-    now: Optional[str] = None
-    default_windows: Optional[str] = None
-    persistence: Optional[str] = None
-    notes: Optional[str] = None
+    interpretation: Dict[str, str] = Field(
+        ..., description="Human-readable summary for quick decision support"
+    )
+    meta: Dict[str, Any] = Field(
+        ..., description="Computation metadata including windowSec, n, timestamp"
+    )
 
-class IngestStatus(BaseModel):
-    source: str
-    last_ingest_time: datetime | None = None
-    last_latency_ms: float | None = None
-    last_record_count: int = 0
-    pages_fetched: int = 0
-    retries: int = 0
+    # --- Legacy mirrors (optional; only included when include_legacy=true) ---
+    coherenceMean: Optional[float] = Field(
+        None, description="Legacy mirror of interactionStability"
+    )
+    volatilityIndex: Optional[float] = Field(
+        None, description="Legacy mirror of signalVolatility"
+    )
+    predictedDriftRisk: Optional[str] = Field(
+        None, description="Legacy mirror of trustContinuityRiskLevel"
+    )

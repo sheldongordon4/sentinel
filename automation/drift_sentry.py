@@ -1,90 +1,136 @@
 from __future__ import annotations
-import argparse, json, os, time
+import argparse
+import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List
-import httpx
+from typing import Dict, Any
+import sys
 
-API_BASE = os.getenv("API_BASE", "http://localhost:8000")
-PSI_WARN = float(os.getenv("DRIFT_PSI_WARN", "0.10"))
-PSI_CRIT = float(os.getenv("DRIFT_PSI_CRIT", "0.25"))
+import urllib.request
 
-# Anchor artifacts inside the repo (coherence_engine/)
-DEFAULT_ARTIFACT_DIR = Path(__file__).resolve().parents[1] / "artifacts"
-INCIDENT_DIR = (DEFAULT_ARTIFACT_DIR / "incidents")
-INCIDENT_DIR.mkdir(parents=True, exist_ok=True)
+"""
+Phase-2 Trust Continuity Alert emitter.
+Polls /coherence/metrics (semantic fields), evaluates risk, and writes
+ledger-ready incidents as JSON into artifacts/incidents/.
 
-def now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+Usage:
+  python -m automation.drift_sentry --window 24h --min-level medium
+  python -m automation.drift_sentry --window 1h --api http://localhost:8000
+Env (optional):
+  API_BASE=http://localhost:8000
+  COHERENCE_WARN_THRESHOLD=0.10
+  COHERENCE_CRITICAL_THRESHOLD=0.25
+  COHERENCE_MODE=demo|production
+"""
 
-def tool_get_metrics(window: str) -> Dict[str, Any]:
-    url = f"{API_BASE}/coherence/metrics"
-    params = {"window": window}
-    with httpx.Client(timeout=15.0) as client:
-        r = client.get(url, params=params)
-    r.raise_for_status()
-    return r.json()
+# ---------- Config ----------
+INCIDENTS_DIR = Path("artifacts/incidents")
+DEFAULT_API = os.getenv("API_BASE", "http://localhost:8000")
+MODE = os.getenv("COHERENCE_MODE", "demo")
 
-def assess_drift(metrics_json: Dict[str, Any]) -> List[Dict[str, Any]]:
-    incidents: List[Dict[str, Any]] = []
-    signals = metrics_json.get("signals") or metrics_json.get("data") or []
-    for sig in signals:
-        name = sig.get("name") or sig.get("signal") or "unknown"
-        psi = sig.get("psi")
-        if psi is None:
-            continue
-        level = "CRITICAL" if psi >= PSI_CRIT else "WARN" if psi >= PSI_WARN else None
-        if level:
-            incidents.append({
-                "signal": name,
-                "metric": "psi",
-                "value": psi,
-                "thresholds": {"warn": PSI_WARN, "crit": PSI_CRIT},
-                "level": level,
-                "details": {k: v for k, v in sig.items() if k not in ("name", "signal")},
-            })
-    return incidents
+WARN_TH = float(os.getenv("COHERENCE_WARN_THRESHOLD", "0.10"))
+CRIT_TH = float(os.getenv("COHERENCE_CRITICAL_THRESHOLD", "0.25"))
 
-def write_incident(window: str, assessment: List[Dict[str, Any]], metrics_ref: Dict[str, Any], out_dir: Path) -> Path:
+LEVELS = ("low", "medium", "high")
+
+
+def http_get_json(url: str) -> Dict[str, Any]:
+    req = urllib.request.Request(url, headers={"Accept": "application/json"})
+    with urllib.request.urlopen(req, timeout=10) as r:
+        return json.loads(r.read().decode("utf-8"))
+
+
+def map_level_from_vol(vol: float) -> str:
+    if vol < WARN_TH:
+        return "low"
+    if vol < CRIT_TH:
+        return "medium"
+    return "high"
+
+
+def ensure_dir(p: Path) -> None:
+    p.mkdir(parents=True, exist_ok=True)
+
+
+def filename_for(window: str) -> str:
     ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
-    incident_dir = out_dir / "incidents"
-    incident_dir.mkdir(parents=True, exist_ok=True)
-    path = incident_dir / f"incident_{ts}_{window}.json"
-    payload = {
-        "kind": "drift_incident",
-        "created_at": now_iso(),
-        "window": window,
-        "api_base": API_BASE,
-        "assessment": assessment,
-        "metrics_snapshot": metrics_ref,
-        "automation": {
-            "name": "drift_sentry",
-            "version": "0.1.0",
-            "policies": {"psi_warn": PSI_WARN, "psi_crit": PSI_CRIT, "acceptance": "No CRITICAL incidents"},
-            "budget": {"max_runtime_s": 20, "max_tool_calls": 2},
-        },
-    }
-    path.write_text(json.dumps(payload, indent=2))
-    return path
+    return f"incident_{ts}_{window}.json"
+
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Minimal Drift Sentry Automation")
-    parser.add_argument("--window", default="24h", help="metrics window, e.g., 1h, 24h")
-    parser.add_argument("--fail-on-critical", action="store_true", help="exit non-zero if CRITICAL drift detected")
-    parser.add_argument("--out-dir", default=str(DEFAULT_ARTIFACT_DIR), help="base artifacts dir (default: repo ./artifacts)")
+    parser = argparse.ArgumentParser(description="Emit trust_continuity_alert incidents (Phase-2).")
+    parser.add_argument("--window", default="24h", help="Metrics window (e.g., 1h, 24h, 86400)")
+    parser.add_argument("--api", default=DEFAULT_API, help="Base URL for the API service")
+    parser.add_argument("--min-level", default="medium", choices=LEVELS,
+                        help="Minimum risk level to emit an incident (low|medium|high)")
+    parser.add_argument("--dry-run", action="store_true", help="Compute and print, but don't write file")
     args = parser.parse_args()
 
-    t0 = time.time()
-    metrics = tool_get_metrics(args.window)
-    assessment = assess_drift(metrics)
-    report_path = write_incident(args.window, assessment, metrics, Path(args.out_dir))
+    # Normalize window to seconds for the API if provided in h/m suffix
+    win_arg = args.window
+    if win_arg.endswith("h"):
+        try:
+            window_sec = int(float(win_arg[:-1]) * 3600)
+        except ValueError:
+            window_sec = 86400
+    elif win_arg.endswith("m"):
+        try:
+            window_sec = int(float(win_arg[:-1]) * 60)
+        except ValueError:
+            window_sec = 3600
+    else:
+        # assume seconds or integer-like string
+        window_sec = int(win_arg) if win_arg.isdigit() else 86400
 
-    crit = [a for a in assessment if a["level"] == "CRITICAL"]
-    warn = [a for a in assessment if a["level"] == "WARN"]
-    print(f"[drift_sentry] window={args.window} warnings={len(warn)} critical={len(crit)} "
-          f"report={report_path} runtime_s={time.time()-t0:.2f}")
+    url = f"{args.api}/coherence/metrics?window={window_sec}&include_legacy=false"
+    payload = http_get_json(url)
 
-    return 2 if (args.fail_on_critical and crit) else 0
+    # Phase-2 fields
+    stability = float(payload.get("interactionStability", 0.0))
+    volatility = float(payload.get("signalVolatility", 0.0))
+    risk_level = payload.get("trustContinuityRiskLevel")
+    if not isinstance(risk_level, str):
+        # compute from volatility if server didn't label
+        risk_level = map_level_from_vol(volatility)
+    risk_level = risk_level.lower()
+
+    # gating by min-level
+    rank = {lvl: i for i, lvl in enumerate(LEVELS)}
+    if rank[risk_level] < rank[args.min_level]:
+        print(f"[drift_sentry] risk={risk_level} < min={args.min_level}; no incident emitted.")
+        return 0
+
+    # ledger-ready incident body
+    incident: Dict[str, Any] = {
+        "event": "trust_continuity_alert",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "window": args.window,
+        "signalStability": round(stability, 4),
+        "signalLiquidity": round(volatility, 4),
+        "trustContinuityRisk": risk_level, 
+        "trace": {
+            "source": "coherence_engine_v0.2",
+            "upstream": "darshan_signals",
+            "api": url,
+            "mode": MODE,
+            "thresholds": {
+                "warn": WARN_TH,
+                "critical": CRIT_TH,
+            },
+        },
+    }
+
+    if args.dry_run:
+        print(json.dumps(incident, indent=2))
+        return 0
+
+    ensure_dir(INCIDENTS_DIR)
+    out = INCIDENTS_DIR / filename_for(args.window)
+    out.write_text(json.dumps(incident, ensure_ascii=False, indent=2))
+    print(f"[drift_sentry] wrote {out} (risk={risk_level})")
+    return 0
+
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    sys.exit(main())

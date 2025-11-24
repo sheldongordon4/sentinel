@@ -1,68 +1,129 @@
-from __future__ import annotations
-from dataclasses import dataclass
-from typing import Iterable, List, Tuple
-import math
-import time
+from typing import List, Dict, Any
+from statistics import mean, pstdev
+import os
 
-@dataclass(frozen=True)
-class BasicStats:
-    mean: float
-    stdev: float 
-    n: int
+# --- Thresholds from environment (Phase 2.1 externalization) ---
+STABILITY_HIGH_MIN = float(os.getenv("STABILITY_HIGH_MIN", "0.80"))
+STABILITY_MEDIUM_MIN = float(os.getenv("STABILITY_MEDIUM_MIN", "0.55"))
 
-def _mean(xs: Iterable[float]) -> Tuple[float, int]:
-    total = 0.0
-    n = 0
-    for v in xs:
-        if v is None:
-            continue
-        total += float(v)
-        n += 1
-    if n == 0:
-        return 0.0, 0
-    return total / n, n
+COHERENCE_WARN_THRESHOLD = float(os.getenv("COHERENCE_WARN_THRESHOLD", "0.10"))
+COHERENCE_CRITICAL_THRESHOLD = float(os.getenv("COHERENCE_CRITICAL_THRESHOLD", "0.25"))
 
-def _stdev(xs: Iterable[float], mean: float, n: int) -> float:
-    if n <= 1:
+
+def _rolling_mean(values: List[float]) -> float:
+    return float(mean(values)) if values else 0.0
+
+
+def _normalized_volatility(values: List[float]) -> float:
+    """
+    Normalized volatility = population stdev / mean.
+    Returns 0.0 if empty or mean == 0 to avoid div-by-zero.
+    """
+    if not values:
         return 0.0
-    sse = 0.0
-    for v in xs:
-        if v is None:
-            continue
-        dv = float(v) - mean
-        sse += dv * dv
-    return math.sqrt(sse / (n - 1))
+    m = mean(values)
+    if m == 0:
+        return 0.0
+    return float(pstdev(values) / m)
 
-def basic_stats(values: List[float]) -> BasicStats:
-    mu, n = _mean(values)
-    sigma = _stdev(values, mu, n)
-    return BasicStats(mean=mu, stdev=sigma, n=n)
 
-# Rule-based risk:
-def classify_risk(mean: float, vol_idx: float) -> Literal["low","medium","high"]:
-    if vol_idx < 0.2:  return "low"
-    if vol_idx < 0.5:  return "medium"
+def _trend_label(values: List[float]) -> str:
+    """
+    Dependency-free trend detection:
+    compares the mean of the most recent half to the previous half.
+    Returns one of: "Improving", "Steady", "Deteriorating".
+    """
+    n = len(values)
+    if n < 6:
+        return "Steady"
+    mid = n // 2
+    prev_m = mean(values[:mid])
+    recent_m = mean(values[mid:])
+    pct = 0.0 if prev_m == 0 else (recent_m - prev_m) / abs(prev_m)
+    if pct >= 0.03:
+        return "Improving"
+    if pct <= -0.03:
+        return "Deteriorating"
+    return "Steady"
+
+
+def _risk_from_liquidity(liq: float) -> str:
+    """
+    Coarse risk band derived from normalized volatility (aka signal volatility/liquidity).
+    Returns one of: "low", "medium", "high".
+
+    Uses env-driven thresholds:
+      COHERENCE_WARN_THRESHOLD
+      COHERENCE_CRITICAL_THRESHOLD
+    """
+    if liq < COHERENCE_WARN_THRESHOLD:
+        return "low"
+    if liq < COHERENCE_CRITICAL_THRESHOLD:
+        return "medium"
     return "high"
 
-def compute_metrics(values: List[float], window_sec: int, source: str = "darshan_api") -> dict:
-    t0 = time.perf_counter()
-    stats = basic_stats(values)
-    if abs(stats.mean) < 1e-12:
-        vol_idx = 0.0
-    else:
-        vol_idx = stats.stdev / abs(stats.mean)
-    
-    risk = classify_risk(stats.mean, vol_idx)
-    latency_ms = round((time.perf_counter() - t0) * 1000, 3)
-    
-    return {
-        "coherenceMean": round(stats.mean, 6),
-        "volatilityIndex": round(vol_idx, 6),
-        "predictedDriftRisk": risk,
-        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "windowSec": int(window_sec),
-        "n": stats.n,
-        "inputs": {"source": source},
-        "meta": {"method": "mean/stdev rule-based", "latency_ms": latency_ms},
+
+def compute_metrics(series: List[float], window_sec: int) -> Dict[str, Any]:
+    """
+    Phase 2 API contract (exact field names):
+
+    interactionStability       : float (rolling mean)
+    signalVolatility           : float (normalized stdev/mean)
+    trustContinuityRiskLevel   : "low" | "medium" | "high"
+    coherenceTrend             : "Improving" | "Steady" | "Deteriorating"
+
+    interpretation: {
+        stability        : "High" | "Medium" | "Low"
+        trustContinuity  : "Stable" | "At Risk" | "Critical"
+        coherenceTrend   : (same as top-level)
     }
 
+    meta: {
+        method     : "rolling mean/stdev; half-window trend"
+        windowSec  : int
+        n          : int
+        timestamp  : str (ISO8601)  # set by API layer
+    }
+
+    Legacy mirrors (only when include_legacy=true):
+      coherenceMean, volatilityIndex, predictedDriftRisk
+    """
+    stability = _rolling_mean(series)
+    liquidity = _normalized_volatility(series)
+    risk = _risk_from_liquidity(liquidity)
+    trend = _trend_label(series)
+
+    # Lightweight interpretation layer (using env thresholds)
+    stability_band = (
+        "High"
+        if stability >= STABILITY_HIGH_MIN
+        else "Medium"
+        if stability >= STABILITY_MEDIUM_MIN
+        else "Low"
+    )
+    trust_band = "Stable" if risk == "low" else ("At Risk" if risk == "medium" else "Critical")
+
+    payload: Dict[str, Any] = {
+        "interactionStability": round(stability, 4),
+        "signalVolatility": round(liquidity, 4),
+        "trustContinuityRiskLevel": risk,
+        "coherenceTrend": trend,
+        "interpretation": {
+            "stability": stability_band,
+            "trustContinuity": trust_band,
+            "coherenceTrend": trend,
+        },
+        "meta": {
+            "method": "rolling mean/stdev; half-window trend",
+            "windowSec": window_sec,
+            "n": len(series),
+            # "timestamp" is added in the API layer for audit friendliness
+        },
+    }
+
+    # Legacy mirrors (filled/kept by API when include_legacy=true)
+    payload["coherenceMean"] = payload["interactionStability"]
+    payload["volatilityIndex"] = payload["signalVolatility"]
+    payload["predictedDriftRisk"] = payload["trustContinuityRiskLevel"]
+
+    return payload
