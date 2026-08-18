@@ -1,10 +1,10 @@
-# Coherence Engine — Phase 2 Update (Semantic Metrics & Interpretation Layer)
+# Sentinel (Semantic Metrics & Interpretation Layer)
 
-The **Coherence Engine** is the runtime layer that maintains **stable, trustworthy behavior** across human and machine agents.  
+The **Sentinel** is the runtime layer that maintains **stable, trustworthy behavior** across human and machine agents.  
 
 ## Overview
 
-The **Coherence Engine** measures not just statistical drift but **nervous-system stability**, **trust continuity**, and **signal coherence** over time.  
+The **Sentinel** measures not just statistical drift but **nervous-system stability**, **trust continuity**, and **signal coherence** over time.  
 It ingests streaming signal summaries (linguistic, biometric, behavioral, operational), computes **semantic coherence metrics**, detects **trust continuity risks**, and emits **ledger-ready incident reports** for governance and recovery where every number has meaning, traceability, and actionability.
 
 ### Core Features
