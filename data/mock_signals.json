@@ -3,35 +3,35 @@
     {
       "timestamp": "2025-10-29T17:00:00Z",
       "signal_id": "s-001",
-      "coherenceScore": 0.872,
+      "sentinelScore": 0.872,
       "agentStates": {"idle": 3, "active": 7},
       "eventCount": 10
     },
     {
       "timestamp": "2025-10-29T17:05:00Z",
       "signal_id": "s-001",
-      "coherenceScore": 0.855,
+      "sentinelScore": 0.855,
       "agentStates": {"idle": 2, "active": 8},
       "eventCount": 12
     },
     {
       "timestamp": "2025-10-29T17:10:00Z",
       "signal_id": "s-001",
-      "coherenceScore": 0.849,
+      "sentinelScore": 0.849,
       "agentStates": {"idle": 1, "active": 9},
       "eventCount": 13
     },
     {
       "timestamp": "2025-10-29T17:15:00Z",
       "signal_id": "s-001",
-      "coherenceScore": 0.861,
+      "sentinelScore": 0.861,
       "agentStates": {"idle": 2, "active": 8},
       "eventCount": 11
     },
     {
       "timestamp": "2025-10-29T17:20:00Z",
       "signal_id": "s-001",
-      "coherenceScore": 0.88,
+      "sentinelScore": 0.88,
       "agentStates": {"idle": 3, "active": 7},
       "eventCount": 9
     }
