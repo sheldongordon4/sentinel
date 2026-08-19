@@ -35,7 +35,6 @@ Thumbs.db
 # ---- Project artifacts ----
 artifacts/
 !artifacts/incidents/.gitkeep   # keep folder structure only
-data/mock_signals.json
 rolling_store.csv
 rolling_store.db
 

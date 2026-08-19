@@ -1,8 +1,11 @@
 import os
 import csv
+import json
+from datetime import datetime
 from typing import List, Optional
 
 from app.schemas import MetricsRecord
+from app.schemas import SignalPage
 
 
 class CsvMetricsStore:
@@ -140,7 +143,7 @@ class CsvMetricsStore:
                 r = (r + [""] * len(self.HEADER_PHASE2))[: len(self.HEADER_PHASE2)]
                 out.append(
                     MetricsRecord(
-                        ts_utc=r[idx["ts_utc"]] or None,
+                        ts_utc=datetime.fromisoformat(r[idx["ts_utc"]]) if r[idx["ts_utc"]] else None,
                         window_sec=int(r[idx["window_sec"]]) if r[idx["window_sec"]] else None,
                         n=int(r[idx["n"]]) if r[idx["n"]] else None,
                         mean=float(r[idx["interactionStability"]]) if r[idx["interactionStability"]] else None,
@@ -158,7 +161,7 @@ class CsvMetricsStore:
                 r = (r + [""] * len(self.HEADER_LEGACY))[: len(self.HEADER_LEGACY)]
                 out.append(
                     MetricsRecord(
-                        ts_utc=r[idx["ts_utc"]] or None,
+                        ts_utc=datetime.fromisoformat(r[idx["ts_utc"]]) if r[idx["ts_utc"]] else None,
                         window_sec=int(r[idx["window_sec"]]) if r[idx["window_sec"]] else None,
                         n=int(r[idx["n"]]) if r[idx["n"]] else None,
                         mean=float(r[idx["mean"]]) if r[idx["mean"]] else None,
@@ -204,3 +207,16 @@ class CsvMetricsStore:
                 return (self.HEADER_PHASE2, [])
             rows = [row for row in reader]
         return (header, rows)
+
+
+def load_series(window_sec: int, path: str = "rolling_store.csv") -> List[float]:
+    """Load normalized interaction-stability values from the rolling CSV store."""
+    store = CsvMetricsStore(path)
+    records = store.read_latest(limit=0)
+    values = [record.mean for record in records if record.mean is not None]
+    if values:
+        return values
+
+    with open("data/mock_signals.json", encoding="utf-8") as f:
+        page = SignalPage.model_validate(json.load(f))
+    return [record.sentinelScore for record in page.data]

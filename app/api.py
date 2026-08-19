@@ -3,14 +3,7 @@ from fastapi import FastAPI, APIRouter, Query
 
 from .schemas import SentinelMetricsResponse
 from .compute.metrics import compute_metrics
-
-# --- Series loader (try existing; fallback mock) ---
-try:
-    from .persistence.csv_store import load_series
-except Exception:
-    def load_series(window_sec: int):
-        # fallback simple synthetic signal for local/dev
-        return [0.8, 0.82, 0.81, 0.83, 0.84, 0.85, 0.86]
+from .persistence.csv_store import load_series
 
 # --- FastAPI initialization ---
 app = FastAPI(title="Sentinel Engine API", version="0.2.0")

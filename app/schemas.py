@@ -1,5 +1,34 @@
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Any, Dict, List, Literal, Optional
+
 from pydantic import BaseModel, Field
-from typing import Optional, Dict, Literal, Any
+
+
+class SignalSummary(BaseModel):
+    timestamp: datetime
+    signal_id: str
+    sentinelScore: float = Field(..., ge=0.0, le=1.0)
+    agentStates: Dict[str, int] = Field(default_factory=dict)
+    eventCount: int = Field(..., ge=0)
+
+
+class SignalPage(BaseModel):
+    data: List[SignalSummary]
+    next_page: Optional[str] = None
+
+
+@dataclass
+class MetricsRecord:
+    ts_utc: datetime
+    window_sec: int
+    n: int
+    mean: float
+    stdev: float
+    drift_risk: str
+    source: str
+    request_id: Optional[str] = None
+    sentinel_trend: str = ""
 
 class SentinelMetricsResponse(BaseModel):
     """
