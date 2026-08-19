@@ -24,7 +24,11 @@ DOCKER_IMAGE := sentinel-engine:latest
 
 $(ENV_FILE):
 	@echo "[make] Creating $(ENV_FILE) with default sentinel settings"
-	@echo "SENTINEL_MODE=demo" > $(ENV_FILE)
+	@echo "SIGNAL_BASE_URL=https://api.example.com" > $(ENV_FILE)
+	@echo "SIGNAL_API_KEY=changeme" >> $(ENV_FILE)
+	@echo "SIGNAL_TIMEOUT_S=10" >> $(ENV_FILE)
+	@echo "SIGNAL_PAGE_SIZE=500" >> $(ENV_FILE)
+	@echo "SENTINEL_MODE=demo" >> $(ENV_FILE)
 	@echo "SENTINEL_WARN_THRESHOLD=0.10" >> $(ENV_FILE)
 	@echo "SENTINEL_CRITICAL_THRESHOLD=0.25" >> $(ENV_FILE)
 	@echo "TREND_SENSITIVITY=0.02" >> $(ENV_FILE)

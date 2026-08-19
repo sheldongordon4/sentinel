@@ -34,9 +34,9 @@ COPY --from=deps /usr/local/bin /usr/local/bin
 COPY . /app
 
 # Default Phase-2 environment (can be overridden by --env-file .env)
-ENV COHERENCE_MODE=demo \
-    COHERENCE_WARN_THRESHOLD=0.10 \
-    COHERENCE_CRITICAL_THRESHOLD=0.25 \
+ENV SENTINEL_MODE=demo \
+    SENTINEL_WARN_THRESHOLD=0.10 \
+    SENTINEL_CRITICAL_THRESHOLD=0.25 \
     TREND_SENSITIVITY=0.03 \
     STABILITY_HIGH_MIN=0.80 \
     STABILITY_MEDIUM_MIN=0.55 \
