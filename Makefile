@@ -1,4 +1,4 @@
-# Makefile — Coherence Engine (Phase 2)
+# Makefile — Sentinel Engine (Phase 2)
 
 SHELL := /bin/bash
 PY := $(shell command -v python3 || command -v python)
@@ -14,7 +14,7 @@ APP_MODULE := app.api:app
 ENV_FILE := .env
 ENV_EXAMPLE := .env.example
 INCIDENTS_DIR := /app/artifacts
-DOCKER_IMAGE := coherence-engine:latest
+DOCKER_IMAGE := sentinel-engine:latest
 
 .DEFAULT_GOAL := help
 
@@ -23,10 +23,10 @@ DOCKER_IMAGE := coherence-engine:latest
 # -------------------------
 
 $(ENV_FILE):
-	@echo "[make] Creating $(ENV_FILE) with default coherence settings"
-	@echo "COHERENCE_MODE=demo" > $(ENV_FILE)
-	@echo "COHERENCE_WARN_THRESHOLD=0.10" >> $(ENV_FILE)
-	@echo "COHERENCE_CRITICAL_THRESHOLD=0.25" >> $(ENV_FILE)
+	@echo "[make] Creating $(ENV_FILE) with default sentinel settings"
+	@echo "SENTINEL_MODE=demo" > $(ENV_FILE)
+	@echo "SENTINEL_WARN_THRESHOLD=0.10" >> $(ENV_FILE)
+	@echo "SENTINEL_CRITICAL_THRESHOLD=0.25" >> $(ENV_FILE)
 	@echo "TREND_SENSITIVITY=0.02" >> $(ENV_FILE)
 	@echo "STABILITY_HIGH_MIN=0.80" >> $(ENV_FILE)
 	@echo "STABILITY_MEDIUM_MIN=0.55" >> $(ENV_FILE)
@@ -82,16 +82,16 @@ ui: $(ENV_FILE) $(VENV)
 # -------------------------
 
 metrics:
-	@echo "[make] GET /coherence/metrics (default include_legacy=true)"
-	@curl -s "http://$(APP_HOST):$(APP_PORT)/coherence/metrics" | python -m json.tool
+	@echo "[make] GET /sentinel/metrics (default include_legacy=true)"
+	@curl -s "http://$(APP_HOST):$(APP_PORT)/sentinel/metrics" | python -m json.tool
 
 metrics_new:
-	@echo "[make] GET /coherence/metrics?include_legacy=false"
-	@curl -s "http://$(APP_HOST):$(APP_PORT)/coherence/metrics?include_legacy=false" | python -m json.tool
+	@echo "[make] GET /sentinel/metrics?include_legacy=false"
+	@curl -s "http://$(APP_HOST):$(APP_PORT)/sentinel/metrics?include_legacy=false" | python -m json.tool
 
 metrics_legacy:
-	@echo "[make] GET /coherence/metrics?include_legacy=true"
-	@curl -s "http://$(APP_HOST):$(APP_PORT)/coherence/metrics?include_legacy=true" | python -m json.tool
+	@echo "[make] GET /sentinel/metrics?include_legacy=true"
+	@curl -s "http://$(APP_HOST):$(APP_PORT)/sentinel/metrics?include_legacy=true" | python -m json.tool
 
 health:
 	@echo "[make] GET /health"
@@ -126,7 +126,7 @@ docker-run:
 	@echo "[make] Running docker image $(DOCKER_IMAGE)"
 	@docker run --rm \
 		-p $(APP_PORT):8000 \
-		-e COHERENCE_MODE=demo \
+		-e SENTINEL_MODE=demo \
 		-v "$$(pwd)/artifacts:$(INCIDENTS_DIR)" \
 		$(DOCKER_IMAGE)
 

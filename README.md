@@ -4,23 +4,23 @@ The **Sentinel** is the runtime layer that maintains **stable, trustworthy behav
 
 ## Overview
 
-The **Sentinel** measures not just statistical drift but **nervous-system stability**, **trust continuity**, and **signal coherence** over time.  
-It ingests streaming signal summaries (linguistic, biometric, behavioral, operational), computes **semantic coherence metrics**, detects **trust continuity risks**, and emits **ledger-ready incident reports** for governance and recovery where every number has meaning, traceability, and actionability.
+The **Sentinel** measures not just statistical drift but **nervous-system stability**, **trust continuity**, and **signal sentinel** over time.  
+It ingests streaming signal summaries (linguistic, biometric, behavioral, operational), computes **semantic sentinel metrics**, detects **trust continuity risks**, and emits **ledger-ready incident reports** for governance and recovery where every number has meaning, traceability, and actionability.
 
 ### Core Features
 
-- **Signal Ingestion:** Retrieves summaries from Darshan’s `/signals/summary` endpoint or local mock JSON.
+- **Signal Ingestion:** Retrieves summaries from the signal service’s `/signals/summary` endpoint or local mock JSON.
 - **Semantic Metrics:**
   - `interactionStability` — how steady the system’s internal state remains  
   - `signalVolatility` — how fast the state oscillates (behavioral liquidity)  
-  - `trustContinuityRiskLevel` — likelihood of coherence breakdown (`low | medium | high`)  
-  - `coherenceTrend` — trajectory across the window (`Improving | Steady | Deteriorating`)
+  - `trustContinuityRiskLevel` — likelihood of sentinel breakdown (`low | medium | high`)  
+  - `sentinelTrend` — trajectory across the window (`Improving | Steady | Deteriorating`)
 - **Interpretation Block:** Maps numeric bands to human-readable labels for decision-making.
 - **API Endpoints:**
-  - `GET /coherence/metrics` → semantic coherence summary  
+  - `GET /sentinel/metrics` → semantic sentinel summary  
   - `GET /health`, `GET /status` → diagnostics  
 - **Persistence Layer:** CSV or SQLite rolling data store.
-- **Streamlit Dashboard:** Live **Coherence Operations Console**.
+- **Streamlit Dashboard:** Live **Sentinel Operations Console**.
 - **Automation:** *Drift Sentry* emits `trust_continuity_alert` events (ledger-ready format).
 - **Docker Support:** Lightweight container image for deployment or demos.
 
@@ -28,7 +28,7 @@ It ingests streaming signal summaries (linguistic, biometric, behavioral, operat
 ## Folder Structure
 
 ```
-coherence_engine/
+sentinel_engine/
 │
 ├── .env
 ├── Makefile
@@ -51,7 +51,7 @@ coherence_engine/
 │   │   └── sqlite_store.py
 │   │
 │   └── ingest/
-│       └── darshan_client.py
+│       └── signal_client.py
 │
 ├── automation/
 │   ├── __init__.py
@@ -76,8 +76,8 @@ coherence_engine/
 ## Quick Start
 
 ```bash
-git clone https://github.com/<your-username>/coherence_engine.git
-cd coherence_engine
+git clone https://github.com/<your-username>/sentinel_engine.git
+cd sentinel_engine
 make install
 make env
 make api
@@ -89,9 +89,9 @@ make api
 Create `.env` in the project root and include:
 
 ```env
-COHERENCE_MODE=demo                # demo | production
-COHERENCE_WARN_THRESHOLD=0.10
-COHERENCE_CRITICAL_THRESHOLD=0.25
+SENTINEL_MODE=demo                # demo | production
+SENTINEL_WARN_THRESHOLD=0.10
+SENTINEL_CRITICAL_THRESHOLD=0.25
 TREND_SENSITIVITY=0.03
 STABILITY_HIGH_MIN=0.80
 STABILITY_MEDIUM_MIN=0.55
@@ -112,7 +112,7 @@ uvicorn app.api:app --host 0.0.0.0 --port 8000 --reload
 Test:
 
 ```bash
-curl "http://localhost:8000/coherence/metrics?window=86400"
+curl "http://localhost:8000/sentinel/metrics?window=86400"
 ```
 
 ### Example Response
@@ -122,11 +122,11 @@ curl "http://localhost:8000/coherence/metrics?window=86400"
   "interactionStability": 0.8621,
   "signalVolatility": 0.1422,
   "trustContinuityRiskLevel": "low",
-  "coherenceTrend": "Steady",
+  "sentinelTrend": "Steady",
   "interpretation": {
     "stability": "High",
     "trustContinuity": "Stable",
-    "coherenceTrend": "Steady"
+    "sentinelTrend": "Steady"
   },
   "meta": {
     "method": "rolling mean/stdev; half-window trend",
@@ -134,7 +134,7 @@ curl "http://localhost:8000/coherence/metrics?window=86400"
     "n": 120,
     "timestamp": "2025-11-06T20:12:41.391Z"
   },
-  "coherenceMean": 0.8621,
+  "sentinelMean": 0.8621,
   "volatilityIndex": 0.1422,
   "predictedDriftRisk": "low"
 }
@@ -158,7 +158,7 @@ streamlit run streamlit_app/app.py
 - **Trust Continuity Risk**  
 - **Trust Continuity Alerts**
 
-When `COHERENCE_MODE=demo`, the dashboard auto-refreshes every 3 s.
+When `SENTINEL_MODE=demo`, the dashboard auto-refreshes every 3 s.
 
 
 ## Automation — Trust Continuity Alerts
@@ -174,8 +174,8 @@ When `COHERENCE_MODE=demo`, the dashboard auto-refreshes every 3 s.
   "signalLiquidity": 0.21,
   "trustContinuityRisk": "medium",
   "trace": {
-    "source": "coherence_engine_v0.1",
-    "upstream": "darshan_signals"
+    "source": "sentinel_engine_v0.1",
+    "upstream": "signal_signals"
   }
 }
 ```
@@ -193,19 +193,19 @@ make automation-demo         # fast 1h demo mode
 ### Build Image
 
 ```bash
-docker build -t coherence-engine:latest .
+docker build -t sentinel-engine:latest .
 ```
 
 ### Run API Container
 
 ```bash
-docker run --rm -p 8000:8000   --env-file .env   -v "$(pwd)/artifacts:/app/artifacts"   coherence-engine:latest
+docker run --rm -p 8000:8000   --env-file .env   -v "$(pwd)/artifacts:/app/artifacts"   sentinel-engine:latest
 ```
 
 ### Run Streamlit Dashboard
 
 ```bash
-docker run --rm -p 8501:8501   --env-file .env   -v "$(pwd)/artifacts:/app/artifacts"   coherence-engine:latest   bash -lc "streamlit run streamlit_app/app.py --server.port=8501 --server.address=0.0.0.0"
+docker run --rm -p 8501:8501   --env-file .env   -v "$(pwd)/artifacts:/app/artifacts"   sentinel-engine:latest   bash -lc "streamlit run streamlit_app/app.py --server.port=8501 --server.address=0.0.0.0"
 ```
 
 ### Docker Ignore
@@ -230,7 +230,7 @@ You can preserve folder structure using a `.gitkeep` file inside `artifacts/inci
 | `make env` | Prepare `.env` with Phase-2 fields |
 | `make api` | Run FastAPI service |
 | `make ui` | Run Streamlit dashboard |
-| `make metrics` | GET /coherence/metrics (default) |
+| `make metrics` | GET /sentinel/metrics (default) |
 | `make metrics_new` | include_legacy = false |
 | `make metrics_legacy` | include_legacy = true |
 | `make automation-drift` | Emit trust continuity alert |
@@ -272,14 +272,14 @@ Unit tests cover metric semantics, endpoint logic, backward compatibility, and a
 1. Externalize thresholds via `.env` (complete).  
 2. Expose trend interpretation layer (`rising`, `stable`, `declining`).  
 3. Emit incidents based on trend + risk logic.  
-4. Integrate coherence metrics with multi-agent governance dashboard.  
+4. Integrate sentinel metrics with multi-agent governance dashboard.  
 5. Add combined API + UI Docker service for single-container deployment.  
 
 
 ## License
 
 MIT License © 2025  
-Coherence Engine Project — Developed by Sheldon H. Gordon  
+Sentinel Engine Project — Developed by Sheldon H. Gordon  
 
 **Version:** 0.2.1  
 **Last Updated:** November 11, 2025  

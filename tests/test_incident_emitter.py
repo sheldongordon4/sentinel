@@ -20,15 +20,15 @@ def test_incident_written_when_above_min_level(tmp_path, monkeypatch):
             "interactionStability": 0.70,
             "signalVolatility": 0.15,  # between warn(0.10) and crit(0.25)
             "trustContinuityRiskLevel": "medium",
-            "coherenceTrend": "Steady",
-            "interpretation": {"stability": "Medium", "trustContinuity": "At Risk", "coherenceTrend": "Steady"},
+            "sentinelTrend": "Steady",
+            "interpretation": {"stability": "Medium", "trustContinuity": "At Risk", "sentinelTrend": "Steady"},
             "meta": {"windowSec": 3600, "n": 120, "method": "test"},
         }
     monkeypatch.setattr(ds, "http_get_json", fake_get_json)
 
     # Force thresholds to defaults (if env influences your mapping)
-    monkeypatch.setenv("COHERENCE_WARN_THRESHOLD", "0.10")
-    monkeypatch.setenv("COHERENCE_CRITICAL_THRESHOLD", "0.25")
+    monkeypatch.setenv("SENTINEL_WARN_THRESHOLD", "0.10")
+    monkeypatch.setenv("SENTINEL_CRITICAL_THRESHOLD", "0.25")
 
     # Run main logic via a minimal wrapper: emulate CLI args
     # We call the internal pieces directly for test determinism
@@ -74,7 +74,7 @@ def test_no_write_when_below_min_level(tmp_path, monkeypatch, capsys):
             "interactionStability": 0.90,
             "signalVolatility": 0.05,
             "trustContinuityRiskLevel": "low",
-            "coherenceTrend": "Improving",
+            "sentinelTrend": "Improving",
             "interpretation": {},
             "meta": {},
         }

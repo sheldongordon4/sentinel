@@ -6,8 +6,8 @@ import os
 STABILITY_HIGH_MIN = float(os.getenv("STABILITY_HIGH_MIN", "0.80"))
 STABILITY_MEDIUM_MIN = float(os.getenv("STABILITY_MEDIUM_MIN", "0.55"))
 
-COHERENCE_WARN_THRESHOLD = float(os.getenv("COHERENCE_WARN_THRESHOLD", "0.10"))
-COHERENCE_CRITICAL_THRESHOLD = float(os.getenv("COHERENCE_CRITICAL_THRESHOLD", "0.25"))
+SENTINEL_WARN_THRESHOLD = float(os.getenv("SENTINEL_WARN_THRESHOLD", "0.10"))
+SENTINEL_CRITICAL_THRESHOLD = float(os.getenv("SENTINEL_CRITICAL_THRESHOLD", "0.25"))
 
 
 def _rolling_mean(values: List[float]) -> float:
@@ -53,12 +53,12 @@ def _risk_from_liquidity(liq: float) -> str:
     Returns one of: "low", "medium", "high".
 
     Uses env-driven thresholds:
-      COHERENCE_WARN_THRESHOLD
-      COHERENCE_CRITICAL_THRESHOLD
+      SENTINEL_WARN_THRESHOLD
+      SENTINEL_CRITICAL_THRESHOLD
     """
-    if liq < COHERENCE_WARN_THRESHOLD:
+    if liq < SENTINEL_WARN_THRESHOLD:
         return "low"
-    if liq < COHERENCE_CRITICAL_THRESHOLD:
+    if liq < SENTINEL_CRITICAL_THRESHOLD:
         return "medium"
     return "high"
 
@@ -70,12 +70,12 @@ def compute_metrics(series: List[float], window_sec: int) -> Dict[str, Any]:
     interactionStability       : float (rolling mean)
     signalVolatility           : float (normalized stdev/mean)
     trustContinuityRiskLevel   : "low" | "medium" | "high"
-    coherenceTrend             : "Improving" | "Steady" | "Deteriorating"
+    sentinelTrend             : "Improving" | "Steady" | "Deteriorating"
 
     interpretation: {
         stability        : "High" | "Medium" | "Low"
         trustContinuity  : "Stable" | "At Risk" | "Critical"
-        coherenceTrend   : (same as top-level)
+        sentinelTrend   : (same as top-level)
     }
 
     meta: {
@@ -86,7 +86,7 @@ def compute_metrics(series: List[float], window_sec: int) -> Dict[str, Any]:
     }
 
     Legacy mirrors (only when include_legacy=true):
-      coherenceMean, volatilityIndex, predictedDriftRisk
+      sentinelMean, volatilityIndex, predictedDriftRisk
     """
     stability = _rolling_mean(series)
     liquidity = _normalized_volatility(series)
@@ -107,11 +107,11 @@ def compute_metrics(series: List[float], window_sec: int) -> Dict[str, Any]:
         "interactionStability": round(stability, 4),
         "signalVolatility": round(liquidity, 4),
         "trustContinuityRiskLevel": risk,
-        "coherenceTrend": trend,
+        "sentinelTrend": trend,
         "interpretation": {
             "stability": stability_band,
             "trustContinuity": trust_band,
-            "coherenceTrend": trend,
+            "sentinelTrend": trend,
         },
         "meta": {
             "method": "rolling mean/stdev; half-window trend",
@@ -122,7 +122,7 @@ def compute_metrics(series: List[float], window_sec: int) -> Dict[str, Any]:
     }
 
     # Legacy mirrors (filled/kept by API when include_legacy=true)
-    payload["coherenceMean"] = payload["interactionStability"]
+    payload["sentinelMean"] = payload["interactionStability"]
     payload["volatilityIndex"] = payload["signalVolatility"]
     payload["predictedDriftRisk"] = payload["trustContinuityRiskLevel"]
 

@@ -12,7 +12,7 @@ import streamlit as st
 
 # ---- Config ----
 INCIDENTS_DIR = Path("artifacts/incidents")
-MODE = os.getenv("COHERENCE_MODE", "demo")
+MODE = os.getenv("SENTINEL_MODE", "demo")
 REFRESH_MS = int(os.getenv("UI_REFRESH_MS", "3000"))
 
 st.set_page_config(page_title="Trust Continuity Alerts", layout="wide")
@@ -117,7 +117,7 @@ def emit_demo_alert(window: str = "1h", min_level: str = "low") -> str:
 
 # ---- UI ----
 st.title("Trust Continuity Alerts")
-st.caption("Ledger-ready incidents emitted by the Coherence Engine. Fields: signalStability, signalLiquidity, trustContinuityRisk, window, trace.")
+st.caption("Ledger-ready incidents emitted by the Sentinel Engine. Fields: signalStability, signalLiquidity, trustContinuityRisk, window, trace.")
 
 # Demo button (optional)
 with st.sidebar:

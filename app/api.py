@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from fastapi import FastAPI, APIRouter, Query
 
-from .schemas import CoherenceMetricsResponse
+from .schemas import SentinelMetricsResponse
 from .compute.metrics import compute_metrics
 
 # --- Series loader (try existing; fallback mock) ---
@@ -13,13 +13,13 @@ except Exception:
         return [0.8, 0.82, 0.81, 0.83, 0.84, 0.85, 0.86]
 
 # --- FastAPI initialization ---
-app = FastAPI(title="Coherence Engine API", version="0.2.0")
+app = FastAPI(title="Sentinel Engine API", version="0.2.0")
 router = APIRouter()
 
 # --- Main metrics endpoint ---
 @router.get(
-    "/coherence/metrics",
-    response_model=CoherenceMetricsResponse,
+    "/sentinel/metrics",
+    response_model=SentinelMetricsResponse,
     response_model_exclude_none=True,
 )
 def get_metrics(
@@ -39,7 +39,7 @@ def get_metrics(
     payload["meta"]["n"] = len(series)
 
     if not include_legacy:
-        payload.pop("coherenceMean", None)
+        payload.pop("sentinelMean", None)
         payload.pop("volatilityIndex", None)
         payload.pop("predictedDriftRisk", None)
 
@@ -55,9 +55,9 @@ def health():
 def status():
     from os import getenv
     return {
-        "mode": getenv("COHERENCE_MODE", "demo"),
-        "warn_threshold": getenv("COHERENCE_WARN_THRESHOLD", "0.10"),
-        "critical_threshold": getenv("COHERENCE_CRITICAL_THRESHOLD", "0.25"),
+        "mode": getenv("SENTINEL_MODE", "demo"),
+        "warn_threshold": getenv("SENTINEL_WARN_THRESHOLD", "0.10"),
+        "critical_threshold": getenv("SENTINEL_CRITICAL_THRESHOLD", "0.25"),
         "trend_sensitivity": getenv("TREND_SENSITIVITY", "0.03"),
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }

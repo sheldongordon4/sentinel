@@ -22,35 +22,35 @@ def test_health_and_status_endpoints():
 
 
 def test_metrics_default_includes_legacy_fields():
-    r = client.get("/coherence/metrics")
+    r = client.get("/sentinel/metrics")
     assert r.status_code == 200
     body = r.json()
 
     # New semantic fields
-    for k in ("interactionStability", "signalVolatility", "trustContinuityRiskLevel", "coherenceTrend", "interpretation", "meta"):
+    for k in ("interactionStability", "signalVolatility", "trustContinuityRiskLevel", "sentinelTrend", "interpretation", "meta"):
         assert k in body
 
     # Legacy present by default
-    for k in ("coherenceMean", "volatilityIndex", "predictedDriftRisk"):
+    for k in ("sentinelMean", "volatilityIndex", "predictedDriftRisk"):
         assert k in body
 
 
 def test_metrics_exclude_legacy_fields_when_flag_false():
-    r = client.get("/coherence/metrics?include_legacy=false")
+    r = client.get("/sentinel/metrics?include_legacy=false")
     assert r.status_code == 200
     body = r.json()
 
     # New semantic fields present
-    for k in ("interactionStability", "signalVolatility", "trustContinuityRiskLevel", "coherenceTrend"):
+    for k in ("interactionStability", "signalVolatility", "trustContinuityRiskLevel", "sentinelTrend"):
         assert k in body
 
     # Legacy stripped
-    for k in ("coherenceMean", "volatilityIndex", "predictedDriftRisk"):
+    for k in ("sentinelMean", "volatilityIndex", "predictedDriftRisk"):
         assert k not in body
 
 
 def test_metrics_meta_contains_expected_fields():
-    r = client.get("/coherence/metrics")
+    r = client.get("/sentinel/metrics")
     assert r.status_code == 200
     meta = r.json().get("meta", {})
     for k in ("method", "windowSec", "n", "timestamp"):

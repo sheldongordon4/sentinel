@@ -13,7 +13,7 @@ def test_compute_metrics_basic_semantics():
     assert "interactionStability" in out
     assert "signalVolatility" in out
     assert "trustContinuityRiskLevel" in out
-    assert "coherenceTrend" in out
+    assert "sentinelTrend" in out
     assert "interpretation" in out and isinstance(out["interpretation"], dict)
     assert "meta" in out and isinstance(out["meta"], dict)
 
@@ -23,10 +23,10 @@ def test_compute_metrics_basic_semantics():
     assert math.isfinite(out["interactionStability"])
     assert math.isfinite(out["signalVolatility"])
     assert out["trustContinuityRiskLevel"] in {"low", "medium", "high"}
-    assert out["coherenceTrend"] in {"Improving", "Steady", "Deteriorating"}
+    assert out["sentinelTrend"] in {"Improving", "Steady", "Deteriorating"}
 
     # Legacy mirrors present (compute layer mirrors new -> old)
-    assert out["coherenceMean"] == out["interactionStability"]
+    assert out["sentinelMean"] == out["interactionStability"]
     assert out["volatilityIndex"] == out["signalVolatility"]
     assert out["predictedDriftRisk"] == out["trustContinuityRiskLevel"]
 
@@ -37,4 +37,4 @@ def test_compute_metrics_empty_series():
     assert out["interactionStability"] == 0.0
     assert out["signalVolatility"] == 0.0
     assert out["trustContinuityRiskLevel"] in {"low", "medium", "high"}  # thresholding may pick 'low'
-    assert out["coherenceTrend"] in {"Improving", "Steady", "Deteriorating"}
+    assert out["sentinelTrend"] in {"Improving", "Steady", "Deteriorating"}

@@ -6,7 +6,7 @@ client = TestClient(app)
 
 
 def test_metrics_include_legacy_true():
-    resp = client.get("/coherence/metrics", params={"include_legacy": True})
+    resp = client.get("/sentinel/metrics", params={"include_legacy": True})
     assert resp.status_code == 200
     data = resp.json()
 
@@ -14,16 +14,16 @@ def test_metrics_include_legacy_true():
     assert "interactionStability" in data
     assert "signalVolatility" in data
     assert "trustContinuityRiskLevel" in data
-    assert "coherenceTrend" in data
+    assert "sentinelTrend" in data
 
     # Legacy mirrors should be present when include_legacy=true
-    assert "coherenceMean" in data
+    assert "sentinelMean" in data
     assert "volatilityIndex" in data
     assert "predictedDriftRisk" in data
 
 
 def test_metrics_include_legacy_false():
-    resp = client.get("/coherence/metrics", params={"include_legacy": False})
+    resp = client.get("/sentinel/metrics", params={"include_legacy": False})
     assert resp.status_code == 200
     data = resp.json()
 
@@ -31,19 +31,19 @@ def test_metrics_include_legacy_false():
     assert "interactionStability" in data
     assert "signalVolatility" in data
     assert "trustContinuityRiskLevel" in data
-    assert "coherenceTrend" in data
+    assert "sentinelTrend" in data
 
     # Legacy mirrors should be removed
-    assert "coherenceMean" not in data
+    assert "sentinelMean" not in data
     assert "volatilityIndex" not in data
     assert "predictedDriftRisk" not in data
 
 
 def test_status_includes_mode_and_thresholds(monkeypatch):
     # Set env to known values for this test only
-    monkeypatch.setenv("COHERENCE_MODE", "production")
-    monkeypatch.setenv("COHERENCE_WARN_THRESHOLD", "0.12")
-    monkeypatch.setenv("COHERENCE_CRITICAL_THRESHOLD", "0.30")
+    monkeypatch.setenv("SENTINEL_MODE", "production")
+    monkeypatch.setenv("SENTINEL_WARN_THRESHOLD", "0.12")
+    monkeypatch.setenv("SENTINEL_CRITICAL_THRESHOLD", "0.30")
     monkeypatch.setenv("TREND_SENSITIVITY", "0.02")
 
     resp = client.get("/status")

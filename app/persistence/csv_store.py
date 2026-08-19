@@ -7,7 +7,7 @@ from app.schemas import MetricsRecord
 
 class CsvMetricsStore:
     """
-    CSV persistence for Coherence Engine metrics.
+    CSV persistence for Sentinel Engine metrics.
 
     NOTE: API & UI speak Phase 2 names. Internally we still expose MetricsRecord
     to avoid touching callers; we map new<->old fields at the boundary.
@@ -20,7 +20,7 @@ class CsvMetricsStore:
         "interactionStability",
         "signalVolatility",
         "trustContinuityRiskLevel",
-        "coherenceTrend",
+        "sentinelTrend",
         "source",
         "request_id",
     ]
@@ -71,7 +71,7 @@ class CsvMetricsStore:
                     "interactionStability": r[3],           # mean -> interactionStability
                     "signalVolatility": r[4],                # stdev -> signalVolatility
                     "trustContinuityRiskLevel": r[5],        # drift_risk -> trustContinuityRiskLevel
-                    "coherenceTrend": "",                    # not recorded in legacy; leave blank
+                    "sentinelTrend": "",                    # not recorded in legacy; leave blank
                     "source": r[6],
                     "request_id": r[7],
                 }
@@ -104,7 +104,7 @@ class CsvMetricsStore:
         - mean                -> interactionStability
         - stdev               -> signalVolatility
         - drift_risk          -> trustContinuityRiskLevel
-        - (optional) rec.coherence_trend if you later add it to MetricsRecord
+        - (optional) rec.sentinel_trend if you later add it to MetricsRecord
         """
         self.init()
         row = [
@@ -114,7 +114,7 @@ class CsvMetricsStore:
             float(rec.mean) if rec.mean is not None else "",
             float(rec.stdev) if rec.stdev is not None else "",
             str(rec.drift_risk) if rec.drift_risk is not None else "",
-            getattr(rec, "coherence_trend", "") or "",
+            getattr(rec, "sentinel_trend", "") or "",
             str(rec.source) if rec.source is not None else "",
             str(rec.request_id) if rec.request_id is not None else "",
         ]

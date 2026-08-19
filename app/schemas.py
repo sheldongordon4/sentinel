@@ -1,9 +1,9 @@
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, Literal, Any
 
-class CoherenceMetricsResponse(BaseModel):
+class SentinelMetricsResponse(BaseModel):
     """
-    Phase 2 Coherence metrics response model.
+    Phase 2 Sentinel metrics response model.
     """
 
     # --- Phase 2 fields (canonical) ---
@@ -12,7 +12,7 @@ class CoherenceMetricsResponse(BaseModel):
     trustContinuityRiskLevel: Literal["low", "medium", "high"] = Field(
         ..., description="Risk derived from signal volatility"
     )
-    coherenceTrend: Literal["Improving", "Steady", "Deteriorating"] = Field(
+    sentinelTrend: Literal["Improving", "Steady", "Deteriorating"] = Field(
         ..., description="Trend label across the window"
     )
 
@@ -24,7 +24,7 @@ class CoherenceMetricsResponse(BaseModel):
     )
 
     # --- Legacy mirrors (optional; only included when include_legacy=true) ---
-    coherenceMean: Optional[float] = Field(
+    sentinelMean: Optional[float] = Field(
         None, description="Legacy mirror of interactionStability"
     )
     volatilityIndex: Optional[float] = Field(

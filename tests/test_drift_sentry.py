@@ -16,7 +16,7 @@ def test_map_level_from_vol_uses_thresholds(monkeypatch):
 
 
 def test_drift_sentry_dry_run_emits_trust_continuity_alert(monkeypatch, capsys):
-    # Fake /coherence/metrics response
+    # Fake /sentinel/metrics response
     def fake_http_get_json(url: str):
         return {
             "interactionStability": 0.84,
@@ -55,6 +55,6 @@ def test_drift_sentry_dry_run_emits_trust_continuity_alert(monkeypatch, capsys):
 
     trace = incident.get("trace", {})
     assert trace.get("api", "").startswith("http://fake-api")
-    assert trace.get("source") == "coherence_engine_v0.2"
+    assert trace.get("source") == "sentinel_v0.2"
     assert "thresholds" in trace
 

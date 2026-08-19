@@ -11,7 +11,7 @@ import urllib.request
 
 """
 Phase-2 Trust Continuity Alert emitter.
-Polls /coherence/metrics (semantic fields), evaluates risk, and writes
+Polls /sentinel/metrics (semantic fields), evaluates risk, and writes
 ledger-ready incidents as JSON into artifacts/incidents/.
 
 Usage:
@@ -19,18 +19,18 @@ Usage:
   python -m automation.drift_sentry --window 1h --api http://localhost:8000
 Env (optional):
   API_BASE=http://localhost:8000
-  COHERENCE_WARN_THRESHOLD=0.10
-  COHERENCE_CRITICAL_THRESHOLD=0.25
-  COHERENCE_MODE=demo|production
+  SENTINEL_WARN_THRESHOLD=0.10
+  SENTINEL_CRITICAL_THRESHOLD=0.25
+  SENTINEL_MODE=demo|production
 """
 
 # ---------- Config ----------
 INCIDENTS_DIR = Path("artifacts/incidents")
 DEFAULT_API = os.getenv("API_BASE", "http://localhost:8000")
-MODE = os.getenv("COHERENCE_MODE", "demo")
+MODE = os.getenv("SENTINEL_MODE", "demo")
 
-WARN_TH = float(os.getenv("COHERENCE_WARN_THRESHOLD", "0.10"))
-CRIT_TH = float(os.getenv("COHERENCE_CRITICAL_THRESHOLD", "0.25"))
+WARN_TH = float(os.getenv("SENTINEL_WARN_THRESHOLD", "0.10"))
+CRIT_TH = float(os.getenv("SENTINEL_CRITICAL_THRESHOLD", "0.25"))
 
 LEVELS = ("low", "medium", "high")
 
@@ -83,7 +83,7 @@ def main() -> int:
         # assume seconds or integer-like string
         window_sec = int(win_arg) if win_arg.isdigit() else 86400
 
-    url = f"{args.api}/coherence/metrics?window={window_sec}&include_legacy=false"
+    url = f"{args.api}/sentinel/metrics?window={window_sec}&include_legacy=false"
     payload = http_get_json(url)
 
     # Phase-2 fields
@@ -110,8 +110,8 @@ def main() -> int:
         "signalLiquidity": round(volatility, 4),
         "trustContinuityRisk": risk_level, 
         "trace": {
-            "source": "coherence_engine_v0.2",
-            "upstream": "darshan_signals",
+            "source": "sentinel_v0.2",
+            "upstream": os.getenv("SIGNAL_SOURCE", "signal_source"),
             "api": url,
             "mode": MODE,
             "thresholds": {

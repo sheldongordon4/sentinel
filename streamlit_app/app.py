@@ -12,10 +12,10 @@ import urllib.error
 
 # ---- Config ----
 API_BASE = os.getenv("API_BASE", "http://localhost:8000")
-MODE = os.getenv("COHERENCE_MODE", "demo")
+MODE = os.getenv("SENTINEL_MODE", "demo")
 REFRESH_MS = int(os.getenv("UI_REFRESH_MS", "3000"))
 
-st.set_page_config(page_title="Coherence Operations Console", layout="wide")
+st.set_page_config(page_title="Sentinel Operations Console", layout="wide")
 
 try:
     if MODE == "demo":
@@ -51,7 +51,7 @@ def arrow_sanitize(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def metrics_endpoint(base: str, window_sec: int, include_legacy: bool) -> str:
-    return f"{base}/coherence/metrics?window={window_sec}&include_legacy={'true' if include_legacy else 'false'}"
+    return f"{base}/sentinel/metrics?window={window_sec}&include_legacy={'true' if include_legacy else 'false'}"
 
 
 # ---- Sidebar Controls ----
@@ -62,7 +62,7 @@ include_legacy = st.sidebar.toggle("Show legacy fields", value=False)
 st.sidebar.caption(f"Mode: **{MODE}** · Auto-refresh: **{REFRESH_MS} ms** (demo)")
 
 # ---- Fetch and Render Metrics ----
-st.title("Coherence Operations Console")
+st.title("Sentinel Operations Console")
 st.caption("Phase-2 semantics: **Signal Stability**, **Signal Liquidity**, **Trust Continuity Risk**, **Trend**")
 
 url = metrics_endpoint(api_base, int(window_sec), include_legacy)
@@ -76,10 +76,10 @@ except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError) as e:
     st.stop()
 
 # Pull Phase-2 fields with graceful fallbacks
-stability = payload.get("interactionStability") or payload.get("coherenceMean")
+stability = payload.get("interactionStability") or payload.get("sentinelMean")
 volatility = payload.get("signalVolatility") or payload.get("volatilityIndex")
 risk = payload.get("trustContinuityRiskLevel") or payload.get("predictedDriftRisk")
-trend = payload.get("coherenceTrend", "—")
+trend = payload.get("sentinelTrend", "—")
 interp = payload.get("interpretation", {})
 meta = payload.get("meta", {})
 
@@ -100,7 +100,7 @@ st.divider()
 interp_rows = [
     {"Metric": "Stability Band", "Label": interp.get("stability", "—")},
     {"Metric": "Trust Continuity", "Label": interp.get("trustContinuity", "—")},
-    {"Metric": "Trend", "Label": interp.get("coherenceTrend", trend)},
+    {"Metric": "Trend", "Label": interp.get("sentinelTrend", trend)},
 ]
 df_interp = arrow_sanitize(pd.DataFrame(interp_rows))
 st.subheader("Interpretation")
