@@ -40,8 +40,8 @@ Risk level and trend are deliberately richer together than either alone. A syste
            │ SentinelMetricsResponse
            ▼
  ┌─────────────────────┐     ┌──────────────────────┐
- │   FastAPI Service   │────▶│  Streamlit Dashboard  │
- │  /sentinel/metrics  │     │  (Operations Console) │
+ │   FastAPI Service   │────▶│  Streamlit Dashboard │
+ │  /sentinel/metrics  │     │  (Operations Console)│
  └─────────┬───────────┘     └──────────────────────┘
            │ poll
            ▼
