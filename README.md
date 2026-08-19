@@ -1,149 +1,195 @@
-# Sentinel (Semantic Metrics & Interpretation Layer)
+# Sentinel
 
-The **Sentinel** is the runtime layer that maintains **stable, trustworthy behavior** across human and machine agents.  
+**Runtime monitoring for LLM output reliability using statistical process control.**
 
-## Overview
+Sentinel is a lightweight, upstream-agnostic framework that continuously monitors the behavioral consistency of deployed large language models. Rather than evaluating individual outputs against ground-truth labels, Sentinel treats LLM output quality as a time-series signal and applies statistical process control (SPC) to detect drift, instability, and hallucination-onset patterns before they compound into production incidents. It measures not just statistical drift but nervous-system stability, trust continuity, and signal integrity over time — and every number it emits has meaning, traceability, and actionability.
 
-The **Sentinel** measures not just statistical drift but **nervous-system stability**, **trust continuity**, and **signal sentinel** over time.  
-It ingests streaming signal summaries (linguistic, biometric, behavioral, operational), computes **semantic sentinel metrics**, detects **trust continuity risks**, and emits **ledger-ready incident reports** for governance and recovery where every number has meaning, traceability, and actionability.
+## How It Works
 
-### Core Features
+Any upstream LLM deployment exposes a paginated HTTP endpoint returning time-stamped records, each carrying a normalized quality score (`sentinelScore` ∈ [0, 1]). Sentinel ingests that stream, computes four interpretable metrics over a rolling observation window, and emits structured, ledger-ready alerts when risk thresholds are breached. No embeddings, judge models, or ground-truth labels required.
+| Metric | What It Measures |
+|---|---|
+| `interactionStability` | Rolling mean of the quality signal — the process level |
+| `signalVolatility` | Coefficient of variation (σ/μ) — how fast the state oscillates (behavioral liquidity) |
+| `trustContinuityRiskLevel` | Three-band risk classification derived from volatility: `low`, `medium`, `high` |
+| `sentinelTrend` | Half-window directional classifier: `Improving`, `Steady`, `Deteriorating` |
 
-- **Signal Ingestion:** Retrieves summaries from the signal service’s `/signals/summary` endpoint or local mock JSON.
-- **Semantic Metrics:**
-  - `interactionStability` — how steady the system’s internal state remains  
-  - `signalVolatility` — how fast the state oscillates (behavioral liquidity)  
-  - `trustContinuityRiskLevel` — likelihood of sentinel breakdown (`low | medium | high`)  
-  - `sentinelTrend` — trajectory across the window (`Improving | Steady | Deteriorating`)
-- **Interpretation Block:** Maps numeric bands to human-readable labels for decision-making.
-- **API Endpoints:**
-  - `GET /sentinel/metrics` → semantic sentinel summary  
-  - `GET /health`, `GET /status` → diagnostics  
-- **Persistence Layer:** CSV or SQLite rolling data store.
-- **Streamlit Dashboard:** Live **Sentinel Operations Console**.
-- **Automation:** *Drift Sentry* emits `trust_continuity_alert` events (ledger-ready format).
-- **Docker Support:** Lightweight container image for deployment or demos.
+Risk level and trend are deliberately richer together than either alone. A system at `risk=high, trend=Improving` is recovering but not yet clear. A system at `risk=medium, trend=Deteriorating` warrants intervention before it crosses the critical threshold. These two dimensions give operators actionable diagnostic signal, not just an alarm.
 
+---
 
-## Folder Structure
+## Architecture
 
 ```
-sentinel_engine/
-│
-├── .env
+ Upstream LLM Deployment
+ ┌─────────────────────┐
+ │  Any signal source  │  sentinelScore ∈ [0,1] per record
+ └─────────┬───────────┘
+           │ async HTTP · paginated · retried
+           ▼
+ ┌─────────────────────┐
+ │   Signal Ingestion  │  app/ingest/signal_client.py
+ │   (SignalClient)    │  httpx · HTTP/2 · tenacity backoff
+ └─────────┬───────────┘
+           │ List[float]
+           ▼
+ ┌─────────────────────┐
+ │  Metric Computation │  app/compute/metrics.py
+ │  (Pure Function)    │  stdlib only · deterministic · env-configured
+ └─────────┬───────────┘
+           │ SentinelMetricsResponse
+           ▼
+ ┌─────────────────────┐     ┌──────────────────────┐
+ │   FastAPI Service   │────▶│  Streamlit Dashboard  │
+ │  /sentinel/metrics  │     │  (Operations Console) │
+ └─────────┬───────────┘     └──────────────────────┘
+           │ poll
+           ▼
+ ┌─────────────────────┐
+ │    Drift Sentry     │  automation/drift_sentry.py
+ │  (CLI Automation)   │  threshold gate · ledger-ready JSON
+ └─────────┬───────────┘
+           ▼
+   artifacts/incidents/
+   incident_<ts>_<window>.json
+```
+
+**Three pillars, independently deployable:**
+
+`Signal Ingestion` — the `SignalClient` connects to any upstream system that exposes a paginated quality signal endpoint. The score generation method is entirely up to the integrating organization: LLM self-evaluation, semantic similarity, task accuracy, classifier confidence, or any other normalized [0, 1] quality indicator. Sentinel is upstream-agnostic by design.
+
+`Metric Computation` — a pure function implemented entirely in Python's standard library (`statistics.mean`, `statistics.pstdev`). No external numerical dependencies. Deterministic: same input always produces the same output. Thresholds are loaded from environment variables at import time.
+
+`Governance and Alerting` — the FastAPI service exposes the metric payload as a REST endpoint. The Drift Sentry CLI polls that endpoint and writes self-describing incident JSON when risk exceeds the configured minimum level. Each incident embeds the active threshold values at time of emission, enabling audit and post-mortem without reference to the running system.
+
+---
+
+## Repository Structure
+
+```
+sentinel/
 ├── Makefile
-├── requirements.txt
 ├── Dockerfile
 ├── .dockerignore
+├── requirements.txt
+├── pytest.ini
+├── .env
 │
 ├── app/
 │   ├── __init__.py
-│   ├── api.py
-│   ├── schemas.py
-│   │
+│   ├── api.py                    # FastAPI service
+│   ├── schemas.py                # Pydantic response models
 │   ├── compute/
-│   │   └── metrics.py
-│   │
-│   ├── persistence/
-│   │   ├── __init__.py
-│   │   ├── base.py
-│   │   ├── csv_store.py
-│   │   └── sqlite_store.py
-│   │
-│   └── ingest/
-│       └── signal_client.py
+│   │   └── metrics.py            # Core metric computation
+│   ├── ingest/
+│   │   └── signal_client.py      # Upstream HTTP client
+│   └── persistence/
+│       ├── __init__.py
+│       ├── base.py               # MetricsStore protocol
+│       ├── csv_store.py          # CSV backend with schema migration
+│       └── sqlite_store.py       # SQLite backend
 │
 ├── automation/
 │   ├── __init__.py
-│   └── drift_sentry.py
-│
-├── artifacts/
-│   └── incidents/
-│       └── (auto-generated JSON trust_continuity_alerts)
-│
-├── data/
-│   └── mock_signals.json
+│   └── drift_sentry.py           # Trust continuity alert emitter
 │
 ├── streamlit_app/
-│   ├── app.py
+│   ├── app.py                    # Sentinel Operations Console
 │   └── pages/
-│       └── 01_Incidents.py
+│       └── 01_Incidents.py       # Alert history and summary
+│
+├── data/
+│   └── mock_signals.json         # Local development fixture
+│
+├── artifacts/
+│   └── incidents/                # Auto-generated alert JSON
 │
 └── tests/
+    ├── conftest.py
+    ├── test_api.py
+    ├── test_api_metrics.py
+    ├── test_drift_sentry.py
+    └── test_incident_emitter.py
 ```
-
 
 ## Quick Start
 
 ```bash
-git clone https://github.com/<your-username>/sentinel_engine.git
-cd sentinel_engine
-make install
+git clone https://github.com/sheldongordon4/sentinel.git
+cd sentinel
+make venv
 make env
 make api
 ```
 
-
-## Environment Configuration (Phase 2)
-
-Create `.env` in the project root and include:
-
-```env
-SENTINEL_MODE=demo                # demo | production
-SENTINEL_WARN_THRESHOLD=0.10
-SENTINEL_CRITICAL_THRESHOLD=0.25
-TREND_SENSITIVITY=0.03
-STABILITY_HIGH_MIN=0.80
-STABILITY_MEDIUM_MIN=0.55
-UI_REFRESH_MS=3000
-```
-
-Legacy PSI fields (`DRIFT_PSI_WARN`, `DRIFT_PSI_CRIT`) can remain temporarily for backward compatibility.
-
-
-## Run the FastAPI Service
-
-```bash
-make api
-# or
-uvicorn app.api:app --host 0.0.0.0 --port 8000 --reload
-```
-
-Test:
+Test the endpoint:
 
 ```bash
 curl "http://localhost:8000/sentinel/metrics?window=86400"
 ```
 
-### Example Response
+---
+
+## Environment Configuration
+
+`make env` creates a `.env` file with defaults. Override any value before running:
+
+```env
+SIGNAL_BASE_URL=https://api.example.com
+SIGNAL_API_KEY=changeme
+SIGNAL_TIMEOUT_S=10
+SIGNAL_PAGE_SIZE=500
+SENTINEL_MODE=demo                   # demo | production
+SENTINEL_WARN_THRESHOLD=0.10         # volatility threshold for medium risk
+SENTINEL_CRITICAL_THRESHOLD=0.25     # volatility threshold for high risk
+TREND_SENSITIVITY=0.03               # minimum % change to classify as Improving/Deteriorating
+STABILITY_HIGH_MIN=0.80              # mean threshold for High stability band
+STABILITY_MEDIUM_MIN=0.55            # mean threshold for Medium stability band
+API_BASE=http://0.0.0.0:8000         # used by Drift Sentry
+```
+
+---
+
+## API
+
+### `GET /sentinel/metrics`
+
+| Parameter | Default | Description |
+|---|---|---|
+| `window` | `86400` | Observation window in seconds |
+| `include_legacy` | `true` | Include deprecated field aliases |
+
+Example response (`include_legacy=false`):
 
 ```json
 {
   "interactionStability": 0.8621,
   "signalVolatility": 0.1422,
-  "trustContinuityRiskLevel": "low",
-  "sentinelTrend": "Steady",
+  "trustContinuityRiskLevel": "medium",
+  "sentinelTrend": "Deteriorating",
   "interpretation": {
     "stability": "High",
-    "trustContinuity": "Stable",
-    "sentinelTrend": "Steady"
+    "trustContinuity": "At Risk",
+    "sentinelTrend": "Deteriorating"
   },
-  "meta": {
     "method": "rolling mean/stdev; half-window trend",
     "windowSec": 86400,
     "n": 120,
     "timestamp": "2025-11-06T20:12:41.391Z"
-  },
-  "sentinelMean": 0.8621,
-  "volatilityIndex": 0.1422,
-  "predictedDriftRisk": "low"
+  }
 }
 ```
 
+When `include_legacy=true` (default), three additional fields are appended: `sentinelMean`, `volatilityIndex`, and `predictedDriftRisk`. These mirror the canonical fields and exist for backward compatibility only. They will be removed in v0.3.
+### `GET /health`
+
+Returns `{"status": "ok"}`. Used by container health checks.
+
+### `GET /status`
+
+Returns the currently active threshold configuration and operational mode.
 
 ## Dashboard
-
-Launch the Streamlit verification UI:
 
 ```bash
 make ui
@@ -151,19 +197,42 @@ make ui
 streamlit run streamlit_app/app.py
 ```
 
-### Dashboard Labels (Phase 2)
+The Streamlit dashboard provides a live **Sentinel Operations Console** with four KPI metrics, an interpretation summary, and an incidents page. Auto-refreshes every 3 seconds in demo mode.
 
-- **Signal Stability**  
-- **Signal Liquidity**  
-- **Trust Continuity Risk**  
-- **Trust Continuity Alerts**
+**Dashboard KPIs:**
 
-When `SENTINEL_MODE=demo`, the dashboard auto-refreshes every 3 s.
+- Signal Stability
+- Signal Liquidity
+- Trust Continuity Risk
+- Trust Continuity Alerts
 
 
-## Automation — Trust Continuity Alerts
+## Drift Sentry
 
-`automation/drift_sentry.py` emits ledger-ready events like:
+The Drift Sentry polls `/sentinel/metrics` and writes a ledger-ready incident when risk level meets or exceeds the configured minimum:
+
+```bash
+make automation-drift     # emit incident if risk is medium or above
+make automation-demo      # dry run — prints incident JSON without writing to disk
+```
+
+Direct invocation:
+
+```bash
+python -m automation.drift_sentry \
+  --window 24h \
+  --min-level medium \
+  --api http://localhost:8000
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `--window` | `24h` | Observation window (`1h`, `24h`, `86400`, etc.) |
+| `--min-level` | `medium` | Minimum risk level to emit: `low`, `medium`, `high` |
+| `--api` | `$API_BASE` | Base URL of the Sentinel API service |
+| `--dry-run` | off | Print incident JSON without writing to disk |
+
+**Incident schema:**
 
 ```json
 {
@@ -172,74 +241,55 @@ When `SENTINEL_MODE=demo`, the dashboard auto-refreshes every 3 s.
   "window": "24h",
   "signalStability": 0.84,
   "signalLiquidity": 0.21,
-  "trustContinuityRisk": "medium",
   "trace": {
-    "source": "sentinel_engine_v0.1",
-    "upstream": "signal_signals"
+    "source": "sentinel_v0.2",
+    "upstream": "signal_source",
+    "api": "http://localhost:8000/sentinel/metrics?window=86400&include_legacy=false",
+    "mode": "production",
+    "thresholds": {
+      "warn": 0.10,
+      "critical": 0.25
+    }
   }
 }
 ```
 
-You can trigger alerts manually:
+Incidents are written to `artifacts/incidents/incident_<timestamp>_<window>.json`. Each record is self-describing: active threshold values are embedded at write time, so the conditions that triggered the alert are fully auditable without reference to the running system's current configuration.
 
-```bash
-make automation-drift        # normal cadence
-make automation-demo         # fast 1h demo mode
-```
+---
 
+## Docker
 
-## Docker Deployment
-
-### Build Image
+### Build
 
 ```bash
 docker build -t sentinel-engine:latest .
 ```
 
-### Run API Container
+### Run the API
 
 ```bash
-docker run --rm -p 8000:8000   --env-file .env   -v "$(pwd)/artifacts:/app/artifacts"   sentinel-engine:latest
+docker run --rm \
+  -p 8000:8000 \
+  --env-file .env \
+  -v "$(pwd)/artifacts:/app/artifacts" \
+  sentinel-engine:latest
 ```
 
-### Run Streamlit Dashboard
+### Run the Dashboard
 
 ```bash
-docker run --rm -p 8501:8501   --env-file .env   -v "$(pwd)/artifacts:/app/artifacts"   sentinel-engine:latest   bash -lc "streamlit run streamlit_app/app.py --server.port=8501 --server.address=0.0.0.0"
+docker run --rm \
+  -p 8501:8501 \
+  --env-file .env \
+  -v "$(pwd)/artifacts:/app/artifacts" \
+  sentinel-engine:latest \
+  bash -lc "streamlit run streamlit_app/app.py --server.port=8501 --server.address=0.0.0.0"
 ```
 
-### Docker Ignore
+The container runs as a non-root user. Incidents are persisted via the mounted `/app/artifacts` volume. The built-in healthcheck polls `GET /health` every 30 seconds with a 5-second timeout. The tracked `.gitkeep` preserves the incident directory in Git; generated artifacts remain excluded from the Docker build context.
 
-Your `.dockerignore` excludes local caches, test data, `.venv`, and `artifacts/` for smaller, cleaner builds.  
-You can preserve folder structure using a `.gitkeep` file inside `artifacts/incidents`.
-
-
-## Backward Compatibility
-
-- **Legacy fields remain** (default) for any downstream code.  
-- Clients can set `include_legacy=false` to migrate to new naming.  
-- In **v0.2**, legacy names are preserved.  
-- In **v0.3**, they will be fully removed after deprecation warnings.
-
-
-## Makefile Highlights
-
-| Command | Purpose |
-|----------|----------|
-| `make install` | Install dependencies |
-| `make env` | Prepare `.env` with Phase-2 fields |
-| `make api` | Run FastAPI service |
-| `make ui` | Run Streamlit dashboard |
-| `make metrics` | GET /sentinel/metrics (default) |
-| `make metrics_new` | include_legacy = false |
-| `make metrics_legacy` | include_legacy = true |
-| `make automation-drift` | Emit trust continuity alert |
-| `make automation-demo` | Emit sample demo alert |
-| `make docker-build` | Build Docker image |
-| `make docker-run` | Run container |
-| `make test` | Run pytest |
-| `make clean` | Clean env & caches |
-
+---
 
 ## Testing
 
@@ -249,37 +299,82 @@ make test
 pytest -v
 ```
 
-Unit tests cover metric semantics, endpoint logic, backward compatibility, and automation emission.
+The test suite covers metric semantics, API endpoint correctness, legacy field inclusion and exclusion, threshold patching, Drift Sentry dry-run emission, incident file writing, and the no-write gate when risk falls below the configured minimum level.
 
+---
 
-## Interpretation Bands (Defaults)
+## Interpretation Reference
 
-| Metric | Rule | Label |
-|--------|------|-------|
-| `interactionStability ≥ 0.80` | High |
-| `0.55 ≤ interactionStability < 0.80` | Medium |
-| `< 0.55` | Low |
-| `signalVolatility < 0.10` | Risk = low |
-| `0.10–0.25` | Risk = medium |
-| `≥ 0.25` | Risk = high |
-| Trend Δ ≥ +3 % | Improving |
-| Trend Δ ≤ −3 % | Deteriorating |
-| Otherwise | Steady |
+**Interaction Stability** (rolling mean)
 
+| Band | Condition | Label |
+|---|---|---|
+| High | ≥ 0.80 | Nominal operation |
+| Medium | 0.55 – 0.79 | Degraded but operational |
+| Low | < 0.55 | Critical degradation |
 
-## Phase 2 Roadmap
+**Signal Volatility** (coefficient of variation)
 
-1. Externalize thresholds via `.env` (complete).  
-2. Expose trend interpretation layer (`rising`, `stable`, `declining`).  
-3. Emit incidents based on trend + risk logic.  
-4. Integrate sentinel metrics with multi-agent governance dashboard.  
-5. Add combined API + UI Docker service for single-container deployment.  
+| Risk | Condition | Trust Continuity |
+|---|---|---|
+| low | CV < 0.10 | Stable |
+| medium | 0.10 ≤ CV < 0.25 | At Risk |
+| high | CV ≥ 0.25 | Critical |
 
+**Sentinel Trend** (half-window delta)
+
+| Label | Condition |
+|---|---|
+| Improving | Δ ≥ +3% |
+| Steady | −3% < Δ < +3% |
+| Deteriorating | Δ ≤ −3% |
+
+All thresholds are configurable via `.env`.
+
+---
+
+## Backward Compatibility
+
+Legacy field names from v0.1 (`sentinelMean`, `volatilityIndex`, `predictedDriftRisk`) are preserved by default (`include_legacy=true`) and mirror the canonical Phase 2 fields. Set `include_legacy=false` to receive the canonical schema only. Legacy fields will be removed in v0.3 following a deprecation period.
+
+---
+
+## Makefile Reference
+
+| Command | Purpose |
+|---|---|
+| `make venv` | Create virtualenv and install dependencies |
+| `make env` | Create `.env` with default configuration |
+| `make api` | Start FastAPI service on port 8000 |
+| `make ui` | Start Streamlit dashboard |
+| `make metrics` | `GET /sentinel/metrics` (legacy fields included) |
+| `make metrics_new` | `GET /sentinel/metrics?include_legacy=false` |
+| `make metrics_legacy` | `GET /sentinel/metrics?include_legacy=true` |
+| `make health` | `GET /health` |
+| `make status` | `GET /status` — active threshold config |
+| `make automation-drift` | Run Drift Sentry (24h window, min-level=low) |
+| `make automation-demo` | Dry-run Drift Sentry (1h window) |
+| `make test` | Run pytest |
+| `make fmt` | Format with black |
+| `make lint` | Lint with pylint |
+| `make docker-build` | Build Docker image |
+| `make docker-run` | Run API container |
+| `make clean` | Remove virtualenv, caches, and incident files |
+
+---
+
+## Roadmap
+
+1. Externalize thresholds via `.env` — complete
+2. Expose trend interpretation layer (`rising`, `stable`, `declining`)
+3. Emit incidents based on combined trend + risk logic
+4. Integrate sentinel metrics with multi-agent governance dashboard
+5. Add combined API + UI Docker service for single-container deployment
+
+---
 
 ## License
 
-MIT License © 2025  
-Sentinel Engine Project — Developed by Sheldon H. Gordon  
+MIT License © 2025 Sheldon H. Gordon
 
-**Version:** 0.2.1  
-**Last Updated:** November 11, 2025  
+**Version:** 0.2.1 · **Last updated:** August 19, 2026
