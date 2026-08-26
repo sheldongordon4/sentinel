@@ -413,4 +413,4 @@ Legacy field names from v0.1 (`sentinelMean`, `volatilityIndex`, `predictedDrift
 
 MIT License © 2025 Sheldon H. Gordon
 
-**Version:** 0.2.1 · **Last updated:** August 19, 2026
+**Version:** 0.2.1 · **Last updated:** August 25, 2026
