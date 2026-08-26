@@ -3,12 +3,15 @@ from __future__ import annotations
 import json
 import os
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 import pandas as pd
 import streamlit as st
 import urllib.request
 import urllib.error
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # ---- Config ----
 API_BASE = os.getenv("API_BASE", "http://localhost:8000")
@@ -27,7 +30,7 @@ except Exception:
 
 
 # ---- Helpers ----
-@st.cache_data(show_spinner=False)
+@st.cache_data(ttl=max(1, REFRESH_MS / 1000), show_spinner=False)
 def fetch_json(url: str, timeout: int = 8) -> Dict[str, Any]:
     req = urllib.request.Request(url, headers={"Accept": "application/json"})
     with urllib.request.urlopen(req, timeout=timeout) as r:

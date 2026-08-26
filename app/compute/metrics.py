@@ -8,6 +8,7 @@ STABILITY_MEDIUM_MIN = float(os.getenv("STABILITY_MEDIUM_MIN", "0.55"))
 
 SENTINEL_WARN_THRESHOLD = float(os.getenv("SENTINEL_WARN_THRESHOLD", "0.10"))
 SENTINEL_CRITICAL_THRESHOLD = float(os.getenv("SENTINEL_CRITICAL_THRESHOLD", "0.25"))
+TREND_SENSITIVITY = float(os.getenv("TREND_SENSITIVITY", "0.03"))
 
 
 def _rolling_mean(values: List[float]) -> float:
@@ -40,9 +41,9 @@ def _trend_label(values: List[float]) -> str:
     prev_m = mean(values[:mid])
     recent_m = mean(values[mid:])
     pct = 0.0 if prev_m == 0 else (recent_m - prev_m) / abs(prev_m)
-    if pct >= 0.03:
+    if pct >= TREND_SENSITIVITY:
         return "Improving"
-    if pct <= -0.03:
+    if pct <= -TREND_SENSITIVITY:
         return "Deteriorating"
     return "Steady"
 

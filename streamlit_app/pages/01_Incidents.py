@@ -3,12 +3,16 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 import streamlit as st
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # ---- Config ----
 INCIDENTS_DIR = Path("artifacts/incidents")
@@ -27,13 +31,13 @@ except Exception:
 
 
 # ---- Helpers ----
-@st.cache_data(show_spinner=False)
+@st.cache_data(ttl=max(1, REFRESH_MS / 1000), show_spinner=False)
 def list_incident_files(directory: Path) -> List[Path]:
     if not directory.exists():
         return []
     return sorted(directory.glob("*.json"))
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(ttl=max(1, REFRESH_MS / 1000), show_spinner=False)
 def load_json(path: Path) -> Optional[Dict[str, Any]]:
     try:
         with path.open("r", encoding="utf-8") as f:
@@ -41,7 +45,7 @@ def load_json(path: Path) -> Optional[Dict[str, Any]]:
     except Exception:
         return None
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(ttl=max(1, REFRESH_MS / 1000), show_spinner=False)
 def load_all(directory: Path) -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
     for p in list_incident_files(directory):
@@ -105,7 +109,7 @@ def emit_demo_alert(window: str = "1h", min_level: str = "low") -> str:
     """
     try:
         proc = subprocess.run(
-            ["python", "-m", "automation.drift_sentry", "--window", window, "--min-level", min_level],
+            [sys.executable, "-m", "automation.drift_sentry", "--window", window, "--min-level", min_level],
             capture_output=True,
             text=True,
             check=False,

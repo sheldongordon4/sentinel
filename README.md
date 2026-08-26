@@ -148,6 +148,8 @@ export GEMINI_API_KEY=...
 make eval
 ```
 
+API keys may be stored in the local `.env` file instead of exported in the shell. `.env` is ignored by Git; never commit it or place real credentials in example configuration files. Rotate the keys if they have been exposed or shared.
+
 The run writes `eval_results_v3.json` and `eval_cache_v3.json`; both are local artifacts excluded from Git. Cached judge scores can become stale after changing models, prompts, datasets, or judge configuration. Failed judge calls are assigned a neutral score of `0.5`, so inspect the evaluation output before drawing conclusions. This workflow is manual and is not part of `make test`.
 
 ### Evaluation Results
@@ -276,7 +278,7 @@ python -m automation.drift_sentry \
   "signalStability": 0.84,
   "signalLiquidity": 0.21,
   "trace": {
-    "source": "sentinel_v0.2",
+    "source": "sentinel_v0.2.1",
     "upstream": "signal_source",
     "api": "http://localhost:8000/sentinel/metrics?window=86400&include_legacy=false",
     "mode": "production",

@@ -1,8 +1,15 @@
 import json
+import re
 
 import pytest
 
 from automation import drift_sentry
+
+
+def test_filename_for_includes_microsecond_precision():
+    filename = drift_sentry.filename_for("1h")
+
+    assert re.fullmatch(r"incident_\d{8}T\d{12}_1h\.json", filename)
 
 
 def test_map_level_from_vol_uses_thresholds(monkeypatch):
@@ -55,6 +62,6 @@ def test_drift_sentry_dry_run_emits_trust_continuity_alert(monkeypatch, capsys):
 
     trace = incident.get("trace", {})
     assert trace.get("api", "").startswith("http://fake-api")
-    assert trace.get("source") == "sentinel_v0.2"
+    assert trace.get("source") == "sentinel_v0.2.1"
     assert "thresholds" in trace
 

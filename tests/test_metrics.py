@@ -1,7 +1,7 @@
 import math
-import os
 import pytest
 
+from app.compute import metrics
 from app.compute.metrics import compute_metrics
 
 
@@ -38,3 +38,11 @@ def test_compute_metrics_empty_series():
     assert out["signalVolatility"] == 0.0
     assert out["trustContinuityRiskLevel"] in {"low", "medium", "high"}  # thresholding may pick 'low'
     assert out["sentinelTrend"] in {"Improving", "Steady", "Deteriorating"}
+
+
+def test_trend_uses_configured_sensitivity(monkeypatch):
+    monkeypatch.setattr(metrics, "TREND_SENSITIVITY", 0.01)
+
+    out = compute_metrics([0.80, 0.80, 0.80, 0.81, 0.81, 0.81], window_sec=3600)
+
+    assert out["sentinelTrend"] == "Improving"

@@ -37,6 +37,10 @@ import random
 from pathlib import Path
 from statistics import mean, pstdev, median
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 try:
     from openai import OpenAI
 except ImportError:

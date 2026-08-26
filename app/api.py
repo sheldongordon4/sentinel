@@ -1,5 +1,8 @@
 from datetime import datetime, timezone
 from fastapi import FastAPI, APIRouter, Query
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from .schemas import SentinelMetricsResponse
 from .compute.metrics import compute_metrics

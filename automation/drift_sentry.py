@@ -8,6 +8,9 @@ from typing import Dict, Any
 import sys
 
 import urllib.request
+from dotenv import load_dotenv
+
+load_dotenv()
 
 """
 Phase-2 Trust Continuity Alert emitter.
@@ -54,7 +57,7 @@ def ensure_dir(p: Path) -> None:
 
 
 def filename_for(window: str) -> str:
-    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%f")
     return f"incident_{ts}_{window}.json"
 
 
@@ -110,7 +113,7 @@ def main() -> int:
         "signalLiquidity": round(volatility, 4),
         "trustContinuityRisk": risk_level, 
         "trace": {
-            "source": "sentinel_v0.2",
+            "source": "sentinel_v0.2.1",
             "upstream": os.getenv("SIGNAL_SOURCE", "signal_source"),
             "api": url,
             "mode": MODE,
