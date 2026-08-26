@@ -32,6 +32,9 @@ artifacts/*
 rolling_store.csv
 *.csv
 *.json
+# Real-world evaluation outputs
+eval_cache_v3.json
+eval_results_v3.json
 
 # Git and local configs
 .git/

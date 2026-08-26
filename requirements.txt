@@ -26,6 +26,11 @@ pytest
 pytest-asyncio
 pytest-httpx
 
+# Optional real-world evaluation
+openai
+google-genai
+datasets
+
 # Code Quality
 black
 pylint

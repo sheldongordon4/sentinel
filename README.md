@@ -2,11 +2,11 @@
 
 **Runtime monitoring for LLM output reliability using statistical process control.**
 
-Sentinel is a lightweight, upstream-agnostic framework that continuously monitors the behavioral consistency of deployed large language models. Rather than evaluating individual outputs against ground-truth labels, Sentinel treats LLM output quality as a time-series signal and applies statistical process control (SPC) to detect drift, instability, and hallucination-onset patterns before they compound into production incidents. It measures not just statistical drift but nervous-system stability, trust continuity, and signal integrity over time — and every number it emits has meaning, traceability, and actionability.
+Sentinel is a lightweight, upstream-agnostic framework that continuously monitors the behavioral consistency of deployed large language models. Rather than evaluating individual outputs against ground-truth labels, Sentinel treats LLM output quality as a time-series signal and applies statistical process control (SPC) to detect drift, instability, and hallucination-onset patterns before they compound into production incidents. It measures not just statistical drift but nervous-system stability, trust continuity, and signal integrity over time — and every number it emits has meaning, traceability, and actionability. The runtime monitoring path requires no embeddings, judge models, or ground-truth labels.
 
 ## How It Works
 
-Any upstream LLM deployment exposes a paginated HTTP endpoint returning time-stamped records, each carrying a normalized quality score (`sentinelScore` ∈ [0, 1]). Sentinel ingests that stream, computes four interpretable metrics over a rolling observation window, and emits structured, ledger-ready alerts when risk thresholds are breached. No embeddings, judge models, or ground-truth labels required.
+Any upstream LLM deployment exposes a paginated HTTP endpoint returning time-stamped records, each carrying a normalized quality score (`sentinelScore` ∈ [0, 1]). Sentinel ingests that stream, computes four interpretable metrics over a rolling observation window, and emits structured, ledger-ready alerts when risk thresholds are breached.
 | Metric | What It Measures |
 |---|---|
 | `interactionStability` | Rolling mean of the quality signal — the process level |
@@ -92,6 +92,7 @@ sentinel/
 ├── automation/
 │   ├── __init__.py
 │   └── drift_sentry.py           # Trust continuity alert emitter
+├── sentinel_realworld_eval_v2.py  # Optional external real-world evaluation
 │
 ├── streamlit_app/
 │   ├── app.py                    # Sentinel Operations Console
@@ -109,7 +110,9 @@ sentinel/
     ├── test_api.py
     ├── test_api_metrics.py
     ├── test_drift_sentry.py
-    └── test_incident_emitter.py
+    ├── test_incident_emitter.py
+    ├── test_ingest_persistence.py
+    └── test_metrics.py
 ```
 
 ## Quick Start
@@ -127,6 +130,37 @@ Test the endpoint:
 ```bash
 curl "http://localhost:8000/sentinel/metrics?window=86400"
 ```
+
+## Real-World Evaluation
+
+The optional evaluation in `sentinel_realworld_eval_v2.py` exercises Sentinel with live model and dataset calls:
+
+- Stable condition: TriviaQA (`rc.nocontext`, validation split)
+- Degraded condition: TruthfulQA (`generation`, validation split) with an overconfident system prompt
+- Subject model: `gpt-4o-mini`
+- Independent judge: `gemini-2.5-flash`
+
+Set both API keys before running it. The evaluation is networked, takes approximately 15–20 minutes, and has an estimated cost of $2–4:
+
+```bash
+export OPENAI_API_KEY=...
+export GEMINI_API_KEY=...
+make eval
+```
+
+The run writes `eval_results_v3.json` and `eval_cache_v3.json`; both are local artifacts excluded from Git. Cached judge scores can become stale after changing models, prompts, datasets, or judge configuration. Failed judge calls are assigned a neutral score of `0.5`, so inspect the evaluation output before drawing conclusions. This workflow is manual and is not part of `make test`.
+
+### Evaluation Results
+
+The recorded v3 run produced the following metrics:
+
+| Window | Mean score | Volatility | Risk | Trend | Expected risk | Result |
+|---|---:|---:|---|---|---|---|
+| W1: Stable Baseline | 0.8667 | 0.3385 | high | Steady | low | Risk hypothesis failed |
+| W2: Hallucination Burst | 0.8375 | 0.3885 | high | Deteriorating | high | Matched |
+| W3: Recovery from Drift | 0.8367 | 0.3764 | high | Improving | high | Matched |
+
+W2 and W3 matched the expected risk and trend classifications. W1 matched the expected steady trend but did not validate the low-risk hypothesis: the observed score volatility exceeded the critical threshold. This result indicates that a high mean score alone does not imply low volatility and should be treated as an evaluation finding, not as a production guarantee.
 
 ---
 

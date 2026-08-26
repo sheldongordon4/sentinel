@@ -31,7 +31,7 @@ $(ENV_FILE):
 	@echo "SENTINEL_MODE=demo" >> $(ENV_FILE)
 	@echo "SENTINEL_WARN_THRESHOLD=0.10" >> $(ENV_FILE)
 	@echo "SENTINEL_CRITICAL_THRESHOLD=0.25" >> $(ENV_FILE)
-	@echo "TREND_SENSITIVITY=0.02" >> $(ENV_FILE)
+	@echo "TREND_SENSITIVITY=0.03" >> $(ENV_FILE)
 	@echo "STABILITY_HIGH_MIN=0.80" >> $(ENV_FILE)
 	@echo "STABILITY_MEDIUM_MIN=0.55" >> $(ENV_FILE)
 	@echo "UI_REFRESH_MS=3000" >> $(ENV_FILE)
@@ -80,6 +80,10 @@ api: $(ENV_FILE) $(VENV)
 ui: $(ENV_FILE) $(VENV)
 	@echo "[make] Starting Streamlit dashboard"
 	@. $(VENV_BIN)/activate; streamlit run streamlit_app/app.py
+
+eval: $(VENV)
+	@echo "[make] Running real-world evaluation v2 (results/cache v3)"
+	@. $(VENV_BIN)/activate; $(PYTHON) sentinel_realworld_eval_v2.py
 
 # -------------------------
 # Metrics & status helpers
@@ -145,4 +149,4 @@ clean:
 	@rm -f artifacts/incidents/*.json || true
 
 .PHONY: help venv env test fmt lint api ui metrics metrics_new metrics_legacy health status \
-        automation-drift automation-demo docker-build docker-run clean
+	eval automation-drift automation-demo docker-build docker-run clean
