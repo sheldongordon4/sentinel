@@ -85,6 +85,14 @@ eval: $(VENV)
 	@echo "[make] Running real-world evaluation v2 (results/cache v3)"
 	@. $(VENV_BIN)/activate; $(PYTHON) sentinel_realworld_eval_v2.py
 
+eval-v1: $(VENV)
+	@echo "[make] Running real-world evaluation v1 (results/cache v2)"
+	@. $(VENV_BIN)/activate; $(PYTHON) sentinel_realworld_eval.py
+
+synthetic-eval: $(VENV)
+	@echo "[make] Running deterministic synthetic evaluation"
+	@. $(VENV_BIN)/activate; $(PYTHON) sentinel_synthetic_eval.py
+
 # -------------------------
 # Metrics & status helpers
 # -------------------------
@@ -149,4 +157,4 @@ clean:
 	@rm -f artifacts/incidents/*.json || true
 
 .PHONY: help venv env test fmt lint api ui metrics metrics_new metrics_legacy health status \
-	eval automation-drift automation-demo docker-build docker-run clean
+	eval eval-v1 synthetic-eval automation-drift automation-demo docker-build docker-run clean

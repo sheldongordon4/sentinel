@@ -92,6 +92,8 @@ sentinel/
 ├── automation/
 │   ├── __init__.py
 │   └── drift_sentry.py           # Trust continuity alert emitter
+├── sentinel_realworld_eval.py     # Legacy TruthfulQA evaluation
+├── sentinel_synthetic_eval.py     # Deterministic synthetic evaluation
 ├── sentinel_realworld_eval_v2.py  # Optional external real-world evaluation
 │
 ├── streamlit_app/
@@ -151,6 +153,37 @@ make eval
 API keys may be stored in the local `.env` file instead of exported in the shell. `.env` is ignored by Git; never commit it or place real credentials in example configuration files. Rotate the keys if they have been exposed or shared.
 
 The run writes `eval_results_v3.json` and `eval_cache_v3.json`; both are local artifacts excluded from Git. Cached judge scores can become stale after changing models, prompts, datasets, or judge configuration. Failed judge calls are assigned a neutral score of `0.5`, so inspect the evaluation output before drawing conclusions. This workflow is manual and is not part of `make test`.
+
+## Synthetic Evaluation
+
+The deterministic, offline evaluation in `sentinel_synthetic_eval.py` exercises five
+known signal patterns and reports metric classification, threshold boundaries,
+EWMA/CUSUM comparisons, and Mann-Kendall agreement. It requires no API keys or
+network access. It reproduces the paper with the recorded `0.10` warning and
+`0.25` critical thresholds; it fails fast if environment overrides change them:
+
+```bash
+make synthetic-eval
+# or
+python sentinel_synthetic_eval.py
+```
+
+Results are written to `synthetic_eval_results.json` in the repository directory.
+Use `--output PATH` to write them elsewhere. This workflow is manual and is not
+part of `make test`.
+
+The earlier TruthfulQA-only experiment remains available as `sentinel_realworld_eval.py`.
+It uses GPT-4o-mini for both generation and judging and writes `eval_results_v2.json`
+and `eval_cache_v2.json`:
+
+```bash
+make eval-v1
+# or
+python sentinel_realworld_eval.py
+```
+
+The v2 workflow above is the current real-world evaluation entry point; the legacy
+workflow is retained for reproducibility of earlier paper results.
 
 ### Evaluation Results
 
