@@ -154,6 +154,19 @@ API keys may be stored in the local `.env` file instead of exported in the shell
 
 The run writes `eval_results_v3.json` and `eval_cache_v3.json`; both are local artifacts excluded from Git. Cached judge scores can become stale after changing models, prompts, datasets, or judge configuration. Failed judge calls are assigned a neutral score of `0.5`, so inspect the evaluation output before drawing conclusions. This workflow is manual and is not part of `make test`.
 
+The earlier TruthfulQA-only experiment remains available as `sentinel_realworld_eval.py`.
+It uses GPT-4o-mini for both generation and judging and writes `eval_results_v2.json`
+and `eval_cache_v2.json`:
+
+```bash
+make eval-v1
+# or
+python sentinel_realworld_eval.py
+```
+
+The v2 workflow above is the current real-world evaluation entry point; the legacy
+workflow is retained for reproducibility of earlier paper results.
+
 ## Synthetic Evaluation
 
 The deterministic, offline evaluation in `sentinel_synthetic_eval.py` exercises five
@@ -171,19 +184,6 @@ python sentinel_synthetic_eval.py
 Results are written to `synthetic_eval_results.json` in the repository directory.
 Use `--output PATH` to write them elsewhere. This workflow is manual and is not
 part of `make test`.
-
-The earlier TruthfulQA-only experiment remains available as `sentinel_realworld_eval.py`.
-It uses GPT-4o-mini for both generation and judging and writes `eval_results_v2.json`
-and `eval_cache_v2.json`:
-
-```bash
-make eval-v1
-# or
-python sentinel_realworld_eval.py
-```
-
-The v2 workflow above is the current real-world evaluation entry point; the legacy
-workflow is retained for reproducibility of earlier paper results.
 
 ### Evaluation Results
 
