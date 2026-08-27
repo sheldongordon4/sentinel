@@ -1,6 +1,7 @@
 from __future__ import annotations
 import argparse
 import json
+import math
 import os
 from datetime import datetime, timezone
 from pathlib import Path
@@ -58,7 +59,8 @@ def ensure_dir(p: Path) -> None:
 
 def filename_for(window: str) -> str:
     ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%f")
-    return f"incident_{ts}_{window}.json"
+    safe_window = "".join(char for char in window if char.isalnum() or char in "._-")
+    return f"incident_{ts}_{safe_window or 'unknown'}.json"
 
 
 def main() -> int:
@@ -92,6 +94,8 @@ def main() -> int:
     # Phase-2 fields
     stability = float(payload.get("interactionStability", 0.0))
     volatility = float(payload.get("signalVolatility", 0.0))
+    if not math.isfinite(stability) or not math.isfinite(volatility):
+        raise ValueError("Metrics payload contains non-finite numeric values")
     risk_level = payload.get("trustContinuityRiskLevel")
     if not isinstance(risk_level, str):
         # compute from volatility if server didn't label
@@ -100,6 +104,8 @@ def main() -> int:
 
     # gating by min-level
     rank = {lvl: i for i, lvl in enumerate(LEVELS)}
+    if risk_level not in rank:
+        raise ValueError(f"Unknown risk level: {risk_level}")
     if rank[risk_level] < rank[args.min_level]:
         print(f"[drift_sentry] risk={risk_level} < min={args.min_level}; no incident emitted.")
         return 0

@@ -9,6 +9,7 @@ import pandas as pd
 import streamlit as st
 import urllib.request
 import urllib.error
+from urllib.parse import urlsplit
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -54,6 +55,12 @@ def arrow_sanitize(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def metrics_endpoint(base: str, window_sec: int, include_legacy: bool) -> str:
+    parsed = urlsplit(base)
+    allowed_hosts = {
+        host.strip() for host in os.getenv("UI_ALLOWED_API_HOSTS", "localhost,127.0.0.1").split(",") if host.strip()
+    }
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.hostname not in allowed_hosts:
+        raise ValueError("API Base must use HTTP(S) and an allowed host")
     return f"{base}/sentinel/metrics?window={window_sec}&include_legacy={'true' if include_legacy else 'false'}"
 
 
@@ -68,23 +75,33 @@ st.sidebar.caption(f"Mode: **{MODE}** · Auto-refresh: **{REFRESH_MS} ms** (demo
 st.title("Sentinel Operations Console")
 st.caption("Phase-2 semantics: **Signal Stability**, **Signal Liquidity**, **Trust Continuity Risk**, **Trend**")
 
-url = metrics_endpoint(api_base, int(window_sec), include_legacy)
 error_box = st.empty()
 
 try:
+    url = metrics_endpoint(api_base, int(window_sec), include_legacy)
     payload = fetch_json(url)
     error_box.empty()
-except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError) as e:
+except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, ValueError) as e:
     error_box.error(f"Could not reach API: {e}")
     st.stop()
 
 # Pull Phase-2 fields with graceful fallbacks
-stability = payload.get("interactionStability") or payload.get("sentinelMean")
-volatility = payload.get("signalVolatility") or payload.get("volatilityIndex")
-risk = payload.get("trustContinuityRiskLevel") or payload.get("predictedDriftRisk")
+stability = payload.get("interactionStability")
+if stability is None:
+    stability = payload.get("sentinelMean")
+volatility = payload.get("signalVolatility")
+if volatility is None:
+    volatility = payload.get("volatilityIndex")
+risk = payload.get("trustContinuityRiskLevel")
+if risk is None:
+    risk = payload.get("predictedDriftRisk")
 trend = payload.get("sentinelTrend", "—")
 interp = payload.get("interpretation", {})
 meta = payload.get("meta", {})
+if not isinstance(interp, dict):
+    interp = {}
+if not isinstance(meta, dict):
+    meta = {}
 
 # KPIs
 c1, c2, c3, c4 = st.columns(4)

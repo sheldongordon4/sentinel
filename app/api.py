@@ -19,7 +19,7 @@ router = APIRouter()
     response_model_exclude_none=True,
 )
 def get_metrics(
-    window: int = Query(86400, description="Window in seconds"),
+    window: int = Query(86400, gt=0, le=31_536_000, description="Window in seconds"),
     include_legacy: bool = Query(
         True,
         description="Return deprecated fields for backward compatibility",

@@ -113,6 +113,7 @@ def emit_demo_alert(window: str = "1h", min_level: str = "low") -> str:
             capture_output=True,
             text=True,
             check=False,
+            timeout=30,
         )
         return (proc.stdout or proc.stderr).strip()
     except Exception as e:

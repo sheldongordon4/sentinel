@@ -1,7 +1,7 @@
 import os
 import csv
 import json
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 from app.schemas import MetricsRecord
@@ -86,20 +86,7 @@ class CsvMetricsStore:
                 w.writerows(upgraded)
             return
 
-        # Unknown header: rewrite and append best-effort rows
-        with open(self.path, "w", encoding="utf-8", newline="") as f:
-            w = csv.writer(f)
-            w.writerow(self.HEADER_PHASE2)
-            # Try to map by position if row length matches; otherwise pad blanks
-            for r in rows:
-                new_r = ([""] * len(self.HEADER_PHASE2))
-                # Best-effort: place ts/window/n and source if present
-                if len(r) >= 1: new_r[0] = r[0]
-                if len(r) >= 2: new_r[1] = r[1]
-                if len(r) >= 3: new_r[2] = r[2]
-                if len(r) >= 4: new_r[7] = r[3]  # guess 'source'
-                if len(r) >= 5: new_r[8] = r[4]  # guess 'request_id'
-                w.writerow(new_r)
+        raise ValueError(f"Unsupported CSV schema in {self.path}")
 
     def save(self, rec: MetricsRecord) -> None:
         """
@@ -141,36 +128,42 @@ class CsvMetricsStore:
             for r in tail:
                 # Guard on row length
                 r = (r + [""] * len(self.HEADER_PHASE2))[: len(self.HEADER_PHASE2)]
-                out.append(
-                    MetricsRecord(
-                        ts_utc=datetime.fromisoformat(r[idx["ts_utc"]]) if r[idx["ts_utc"]] else None,
-                        window_sec=int(r[idx["window_sec"]]) if r[idx["window_sec"]] else None,
-                        n=int(r[idx["n"]]) if r[idx["n"]] else None,
-                        mean=float(r[idx["interactionStability"]]) if r[idx["interactionStability"]] else None,
-                        stdev=float(r[idx["signalVolatility"]]) if r[idx["signalVolatility"]] else None,
-                        drift_risk=r[idx["trustContinuityRiskLevel"]] or None,
-                        source=r[idx["source"]] or None,
-                        request_id=r[idx["request_id"]] or None,
+                try:
+                    out.append(
+                        MetricsRecord(
+                            ts_utc=datetime.fromisoformat(r[idx["ts_utc"]]) if r[idx["ts_utc"]] else None,
+                            window_sec=int(r[idx["window_sec"]]) if r[idx["window_sec"]] else None,
+                            n=int(r[idx["n"]]) if r[idx["n"]] else None,
+                            mean=float(r[idx["interactionStability"]]) if r[idx["interactionStability"]] else None,
+                            stdev=float(r[idx["signalVolatility"]]) if r[idx["signalVolatility"]] else None,
+                            drift_risk=r[idx["trustContinuityRiskLevel"]] or None,
+                            source=r[idx["source"]] or None,
+                            request_id=r[idx["request_id"]] or None,
+                        )
                     )
-                )
+                except (TypeError, ValueError):
+                    continue
             return out
 
         if header == self.HEADER_LEGACY:
             idx = {k: i for i, k in enumerate(self.HEADER_LEGACY)}
             for r in tail:
                 r = (r + [""] * len(self.HEADER_LEGACY))[: len(self.HEADER_LEGACY)]
-                out.append(
-                    MetricsRecord(
-                        ts_utc=datetime.fromisoformat(r[idx["ts_utc"]]) if r[idx["ts_utc"]] else None,
-                        window_sec=int(r[idx["window_sec"]]) if r[idx["window_sec"]] else None,
-                        n=int(r[idx["n"]]) if r[idx["n"]] else None,
-                        mean=float(r[idx["mean"]]) if r[idx["mean"]] else None,
-                        stdev=float(r[idx["stdev"]]) if r[idx["stdev"]] else None,
-                        drift_risk=r[idx["drift_risk"]] or None,
-                        source=r[idx["source"]] or None,
-                        request_id=r[idx["request_id"]] or None,
+                try:
+                    out.append(
+                        MetricsRecord(
+                            ts_utc=datetime.fromisoformat(r[idx["ts_utc"]]) if r[idx["ts_utc"]] else None,
+                            window_sec=int(r[idx["window_sec"]]) if r[idx["window_sec"]] else None,
+                            n=int(r[idx["n"]]) if r[idx["n"]] else None,
+                            mean=float(r[idx["mean"]]) if r[idx["mean"]] else None,
+                            stdev=float(r[idx["stdev"]]) if r[idx["stdev"]] else None,
+                            drift_risk=r[idx["drift_risk"]] or None,
+                            source=r[idx["source"]] or None,
+                            request_id=r[idx["request_id"]] or None,
+                        )
                     )
-                )
+                except (TypeError, ValueError):
+                    continue
             return out
 
         # Unknown header: best-effort parse for ts/window/n
@@ -211,9 +204,20 @@ class CsvMetricsStore:
 
 def load_series(window_sec: int, path: str = "rolling_store.csv") -> List[float]:
     """Load normalized interaction-stability values from the rolling CSV store."""
+    if window_sec <= 0:
+        raise ValueError("window_sec must be positive")
     store = CsvMetricsStore(path)
     records = store.read_latest(limit=0)
-    values = [record.mean for record in records if record.mean is not None]
+    cutoff = datetime.now(timezone.utc) - timedelta(seconds=window_sec)
+    values = []
+    for record in records:
+        if record.mean is None or record.ts_utc is None:
+            continue
+        timestamp = record.ts_utc
+        if timestamp.tzinfo is None:
+            timestamp = timestamp.replace(tzinfo=timezone.utc)
+        if timestamp >= cutoff:
+            values.append(record.mean)
     if values:
         return values
 

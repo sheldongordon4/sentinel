@@ -57,6 +57,7 @@ class SignalClient:
         pages = 0
         retries = 0
         out: List[SignalSummary] = []
+        seen_pages = set()
 
         async with httpx.AsyncClient(
             base_url=self.base_url, headers=self._headers(), timeout=self.timeout_s, http2=True
@@ -65,13 +66,20 @@ class SignalClient:
             while True:
                 req_params = dict(params)
                 if next_page:
+                    if next_page in seen_pages:
+                        raise ValueError("Upstream pagination repeated a page token")
+                    seen_pages.add(next_page)
+                    if len(seen_pages) > 1000:
+                        raise ValueError("Upstream pagination exceeded 1000 pages")
                     req_params["page"] = next_page
 
                 try:
+                    self._page_attempt_errors = 0
                     page = await self._get_page(client, "/signals/summary", req_params)
-                except httpx.RequestError as e:
-                    retries += 1
+                except (httpx.RequestError, httpx.HTTPStatusError) as e:
+                    retries += max(0, self._page_attempt_errors - 1)
                     raise e
+                retries += self._page_attempt_errors
 
                 pages += 1
                 out.extend(page.data)
@@ -94,8 +102,12 @@ class SignalClient:
         retry=retry_if_exception_type((httpx.RequestError, httpx.HTTPStatusError)),
     )
     async def _get_page(self, client: httpx.AsyncClient, path: str, params: dict) -> SignalPage:
-        resp = await client.get(path, params=params)
-        resp.raise_for_status()
+        try:
+            resp = await client.get(path, params=params)
+            resp.raise_for_status()
+        except (httpx.RequestError, httpx.HTTPStatusError):
+            self._page_attempt_errors = getattr(self, "_page_attempt_errors", 0) + 1
+            raise
         try:
             return SignalPage.model_validate(resp.json())
         except ValidationError as ve:

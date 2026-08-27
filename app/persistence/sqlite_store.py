@@ -50,13 +50,14 @@ class SqliteMetricsStore:
 
     def read_latest(self, limit: int = 100) -> List[MetricsRecord]:
         self.init()
+        query_limit = -1 if limit <= 0 else limit
         with self._conn() as cx:
             cur = cx.execute(
                 """SELECT ts_utc, window_sec, n, mean, stdev, drift_risk, source, request_id
                    FROM rolling_metrics
                    ORDER BY ts_utc DESC
                    LIMIT ?""",
-                (limit,),
+                (query_limit,),
             )
             rows = cur.fetchall()
         from datetime import datetime as _dt
