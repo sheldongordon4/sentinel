@@ -35,7 +35,7 @@ $(ENV_FILE):
 	@echo "STABILITY_HIGH_MIN=0.80" >> $(ENV_FILE)
 	@echo "STABILITY_MEDIUM_MIN=0.55" >> $(ENV_FILE)
 	@echo "UI_REFRESH_MS=3000" >> $(ENV_FILE)
-	@echo "API_BASE=http://$(APP_HOST):$(APP_PORT)" >> $(ENV_FILE)
+	@echo "API_BASE=http://localhost:$(APP_PORT)" >> $(ENV_FILE)
 	@echo "[make] Wrote defaults to $(ENV_FILE)"
 
 # Create venv + install deps if needed

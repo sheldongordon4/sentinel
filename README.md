@@ -214,7 +214,7 @@ SENTINEL_CRITICAL_THRESHOLD=0.25     # volatility threshold for high risk
 TREND_SENSITIVITY=0.03               # minimum % change to classify as Improving/Deteriorating
 STABILITY_HIGH_MIN=0.80              # mean threshold for High stability band
 STABILITY_MEDIUM_MIN=0.55            # mean threshold for Medium stability band
-API_BASE=http://0.0.0.0:8000         # used by Drift Sentry
+API_BASE=http://localhost:8000       # used by Drift Sentry and Streamlit
 ```
 
 ---
@@ -402,12 +402,6 @@ All thresholds are configurable via `.env`.
 
 ---
 
-## Backward Compatibility
-
-Legacy field names from v0.1 (`sentinelMean`, `volatilityIndex`, `predictedDriftRisk`) are preserved by default (`include_legacy=true`) and mirror the canonical Phase 2 fields. Set `include_legacy=false` to receive the canonical schema only. Legacy fields will be removed in v0.3 following a deprecation period.
-
----
-
 ## Makefile Reference
 
 | Command | Purpose |
@@ -423,6 +417,9 @@ Legacy field names from v0.1 (`sentinelMean`, `volatilityIndex`, `predictedDrift
 | `make status` | `GET /status` — active threshold config |
 | `make automation-drift` | Run Drift Sentry (24h window, min-level=low) |
 | `make automation-demo` | Dry-run Drift Sentry (1h window) |
+| `make eval` | Run the current real-world evaluation |
+| `make eval-v1` | Run the legacy TruthfulQA-only evaluation |
+| `make synthetic-eval` | Run the deterministic offline evaluation |
 | `make test` | Run pytest |
 | `make fmt` | Format with black |
 | `make lint` | Lint with pylint |
@@ -435,7 +432,7 @@ Legacy field names from v0.1 (`sentinelMean`, `volatilityIndex`, `predictedDrift
 ## Roadmap
 
 1. Externalize thresholds via `.env` — complete
-2. Expose trend interpretation layer (`rising`, `stable`, `declining`)
+2. Expose trend interpretation layer (`Improving`, `Steady`, `Deteriorating`) — complete
 3. Emit incidents based on combined trend + risk logic
 4. Integrate sentinel metrics with multi-agent governance dashboard
 5. Add combined API + UI Docker service for single-container deployment
