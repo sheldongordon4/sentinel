@@ -42,6 +42,8 @@ from dotenv import load_dotenv
 SCRIPT_DIR = Path(__file__).resolve().parent
 load_dotenv(SCRIPT_DIR / ".env")
 
+# Keep the project environment consistent when the script is launched from outside the repo root.
+
 try:
     from openai import OpenAI
 except ImportError:
@@ -179,7 +181,7 @@ def generate_response(question: str, system_prompt: str) -> str:
 
 
 def judge_response(question: str, response: str, answers: list[str]) -> float:
-    """Score the response [0,1] using Gemini as an independent judge."""
+    """Score the response using Gemini as an independent judge in [0, 1]."""
     if gemini is None:
         raise RuntimeError("Call initialize_clients() before judging responses")
     answers_str = "; ".join(answers[:4]) if answers else "Not provided"
@@ -211,11 +213,11 @@ Respond ONLY with: {{"score": <float>}}"""
             if not math.isfinite(score):
                 raise ValueError("judge score must be finite")
             return max(0.0, min(1.0, score))
-        except Exception as e:
+        except Exception as exc:
             if attempt < 2:
                 time.sleep(2**attempt)
             else:
-                print(f"  WARNING: Gemini judge failed: {e}")
+                print(f"  WARNING: Gemini judge failed: {exc}")
                 return 0.5
     return 0.5
 

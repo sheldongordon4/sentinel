@@ -1,21 +1,17 @@
 """
 sentinel_synthetic_eval.py
 ──────────────────────────
-Reproduces all synthetic evaluation results reported in the paper:
+Reproduces the synthetic evaluation reported in the paper, including the
+scenario tables, threshold boundaries, detector behavior, and trend comparisons.
 
-  Table 1 — Metric classification across five scenarios
-  Table 2 — Raw score distributional statistics
-  Table 3 — Drift Sentry alert emission by min-level
-  Table 4 — Threshold boundary verification
-  Table 5 — EWMA/CUSUM/Sentinel detection behavior
-  Table 6 — Mann-Kendall trend test vs sentinelTrend
-
-Run from inside the sentinel/ repo directory:
+Run from the repository root:
     python sentinel_synthetic_eval.py
 
-No API keys required. No external dependencies beyond the repo itself.
-Results saved to synthetic_eval_results.json
+No API keys required. The script is deterministic and writes results to
+synthetic_eval_results.json.
 """
+
+from __future__ import annotations
 
 import argparse
 import json
@@ -23,11 +19,10 @@ import math
 import random
 from pathlib import Path
 from statistics import mean, pstdev
+from typing import Any
 
 from app.compute import metrics as metrics_module
-from app.compute.metrics import (
-    compute_metrics,
-)
+from app.compute.metrics import compute_metrics
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 DEFAULT_OUTPUT = SCRIPT_DIR / "synthetic_eval_results.json"
@@ -35,7 +30,7 @@ DEFAULT_OUTPUT = SCRIPT_DIR / "synthetic_eval_results.json"
 # ── Configuration ─────────────────────────────────────────────────────────────
 RANDOM_SEED = 42
 N = 120
-WARMUP = 24  # warmup window for EWMA / CUSUM
+WARMUP = 24
 
 # These values are part of the published synthetic experiment.
 TAU_WARN = 0.10
@@ -46,12 +41,11 @@ EWMA_LAMBDA = 0.20
 EWMA_L = 3.0
 
 # CUSUM parameters
-CUSUM_K = 0.5  # k * sigma0
-CUSUM_H = 4.0  # h * sigma0
+CUSUM_K = 0.5
+CUSUM_H = 4.0
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
-def linspace(start, stop, n):
+def linspace(start: float, stop: float, n: int) -> list[float]:
     """Return n evenly spaced values, including both endpoints."""
     if n < 1:
         raise ValueError("n must be at least 1")
@@ -61,35 +55,30 @@ def linspace(start, stop, n):
     return [start + step * i for i in range(n)]
 
 
-def add_noise(series, sigma, seed=RANDOM_SEED):
-    """Add bounded Gaussian noise without changing process-wide RNG state."""
+def add_noise(series: list[float], sigma: float, seed: int = RANDOM_SEED) -> list[float]:
+    """Add bounded Gaussian noise without changing the global random state."""
     if sigma < 0:
         raise ValueError("sigma must be non-negative")
     rng = random.Random(seed)
     return [max(0.0, min(1.0, value + rng.gauss(0, sigma))) for value in series]
 
 
-def normal_cdf(x):
+def normal_cdf(x: float) -> float:
     """Return the standard normal cumulative distribution at x."""
     return 0.5 * (1 + math.erf(x / math.sqrt(2)))
 
 
-# ── Build five synthetic scenarios ────────────────────────────────────────────
-def build_scenarios():
+def build_scenarios() -> list[tuple[str, list[float], str, str]]:
     """Build the five deterministic signal patterns used by the evaluation."""
     s1 = add_noise([0.88] * N, sigma=0.015)
-
     s2 = add_noise(linspace(0.87, 0.48, N), sigma=0.02)
-
     s3 = (
         add_noise([0.85] * 72, sigma=0.01)
         + add_noise([0.30] * 24, sigma=0.04)
         + add_noise(linspace(0.30, 0.65, 24), sigma=0.02)
     )
-
     rng = random.Random(99)
     s4 = [rng.uniform(0.20, 0.90) for _ in range(N)]
-
     s5 = add_noise([0.45] * 60, sigma=0.02) + add_noise(
         linspace(0.45, 0.88, 60), sigma=0.015
     )
@@ -103,13 +92,8 @@ def build_scenarios():
     ]
 
 
-# ── EWMA detector ─────────────────────────────────────────────────────────────
-def ewma_detect(series, warmup=WARMUP, lam=EWMA_LAMBDA, control_limit=EWMA_L):
-    """
-    EWMA control chart.
-    Returns (first_alert_sample_1indexed, total_alerts).
-    first_alert = None if no alert fired.
-    """
+def ewma_detect(series: list[float], warmup: int = WARMUP, lam: float = EWMA_LAMBDA, control_limit: float = EWMA_L):
+    """Return the first EWMA alert index and total alert count."""
     _validate_detector_inputs(series, warmup)
     if not 0 < lam <= 1:
         raise ValueError("lam must be in the interval (0, 1]")
@@ -122,22 +106,19 @@ def ewma_detect(series, warmup=WARMUP, lam=EWMA_LAMBDA, control_limit=EWMA_L):
     cl = control_limit * sigma0 * (lam / (2 - lam)) ** 0.5
 
     z = mu0
-    first, total = None, 0
-    for i, x in enumerate(series[warmup:], start=warmup):
-        z = lam * x + (1 - lam) * z
+    first_alert = None
+    total_alerts = 0
+    for i, value in enumerate(series[warmup:], start=warmup):
+        z = lam * value + (1 - lam) * z
         if z > mu0 + cl or z < mu0 - cl:
-            total += 1
-            if first is None:
-                first = i + 1  # 1-based sample index
-    return first, total
+            total_alerts += 1
+            if first_alert is None:
+                first_alert = i + 1
+    return first_alert, total_alerts
 
 
-# ── CUSUM detector ────────────────────────────────────────────────────────────
-def cusum_detect(series, warmup=WARMUP, k_sigma=CUSUM_K, h_sigma=CUSUM_H):
-    """
-    Two-sided CUSUM.
-    Returns (first_alert_sample_1indexed, total_alerts).
-    """
+def cusum_detect(series: list[float], warmup: int = WARMUP, k_sigma: float = CUSUM_K, h_sigma: float = CUSUM_H):
+    """Return the first two-sided CUSUM alert index and total alert count."""
     _validate_detector_inputs(series, warmup)
     if k_sigma < 0 or h_sigma <= 0:
         raise ValueError("k_sigma must be non-negative and h_sigma must be positive")
@@ -148,29 +129,28 @@ def cusum_detect(series, warmup=WARMUP, k_sigma=CUSUM_K, h_sigma=CUSUM_H):
     k = k_sigma * sigma0
     h = h_sigma * sigma0
 
-    c_plus = c_minus = 0.0
-    first, total = None, 0
-    for i, x in enumerate(series[warmup:], start=warmup):
-        c_plus = max(0, c_plus + (x - mu0 - k))
-        c_minus = max(0, c_minus - (x - mu0) + k)
+    c_plus = 0.0
+    c_minus = 0.0
+    first_alert = None
+    total_alerts = 0
+    for i, value in enumerate(series[warmup:], start=warmup):
+        c_plus = max(0, c_plus + (value - mu0 - k))
+        c_minus = max(0, c_minus - (value - mu0) + k)
         if c_plus > h or c_minus > h:
-            total += 1
-            if first is None:
-                first = i + 1
-    return first, total
+            total_alerts += 1
+            if first_alert is None:
+                first_alert = i + 1
+    return first_alert, total_alerts
 
 
-# ── Mann-Kendall test ─────────────────────────────────────────────────────────
-def mann_kendall(series, alpha=0.05):
-    """
-    Two-sided Mann-Kendall test for monotonic trend.
-    Returns (trend_label, S, Z, p_value, significant).
-    """
+def mann_kendall(series: list[float], alpha: float = 0.05):
+    """Two-sided Mann-Kendall trend test returning label, S, Z, p-value, and significance."""
     if not 0 < alpha < 1:
         raise ValueError("alpha must be between 0 and 1")
     n = len(series)
     if n < 2:
         return "Steady", 0, 0.0, 1.0, False
+
     s_statistic = 0
     for i in range(n - 1):
         for j in range(i + 1, n):
@@ -201,46 +181,33 @@ def mann_kendall(series, alpha=0.05):
     return label, s_statistic, round(z_score, 4), round(p_value, 4), significant
 
 
-# ── Threshold boundary verification ──────────────────────────────────────────
-def build_boundary_series(target_cv, n=120):
-    """
-    Construct a two-value alternating series with a precise CV.
-    For mean=mu, CV=c, we need sigma=c*mu.
-    Using two values a, b alternating: mean=(a+b)/2, pstdev approx.
-    Solve: we set mu=0.5 and derive values from CV.
-    """
+def build_boundary_series(target_cv: float, n: int = 120) -> list[float]:
+    """Construct a two-value alternating series with a precise coefficient of variation."""
     if target_cv < 0:
         raise ValueError("target_cv must be non-negative")
     if n < 2:
         raise ValueError("n must be at least 2")
 
-    # Let mean = mu, sigma = target_cv * mu
-    # Use values: mu + sigma, mu - sigma alternating
-    # pstdev of alternating = sigma exactly
-    mu = 0.75  # arbitrary baseline mean > 0
+    mu = 0.75
     sigma = target_cv * mu
     a = max(0.0, min(1.0, mu + sigma))
     b = max(0.0, min(1.0, mu - sigma))
-    series = []
-    for i in range(n):
-        series.append(a if i % 2 == 0 else b)
-    return series
+    return [a if i % 2 == 0 else b for i in range(n)]
 
 
-# ── Drift Sentry alert logic ──────────────────────────────────────────────────
-def drift_sentry_fires(risk_level, min_level):
-    """Return whether a risk level meets a configured minimum level."""
+def drift_sentry_fires(risk_level: str, min_level: str) -> bool:
+    """Return whether a risk level meets a configured minimum alert level."""
     order = {"low": 0, "medium": 1, "high": 2}
     return order[risk_level] >= order[min_level]
 
 
-def _validate_detector_inputs(series, warmup):
+def _validate_detector_inputs(series: list[float], warmup: int) -> None:
     """Validate the baseline window required by control-chart detectors."""
     if warmup < 2 or warmup >= len(series):
         raise ValueError("warmup must be at least 2 and smaller than series length")
 
 
-def parse_args(args=None):
+def parse_args(args: list[str] | None = None) -> argparse.Namespace:
     """Parse command-line options for the evaluation runner."""
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     parser.add_argument(
@@ -252,8 +219,8 @@ def parse_args(args=None):
     return parser.parse_args(args)
 
 
-def validate_paper_configuration():
-    """Ensure environment overrides cannot silently change paper results."""
+def validate_paper_configuration() -> None:
+    """Ensure environment overrides cannot silently change the paper results."""
     configured = (
         metrics_module.SENTINEL_WARN_THRESHOLD,
         metrics_module.SENTINEL_CRITICAL_THRESHOLD,
@@ -268,18 +235,13 @@ def validate_paper_configuration():
         )
 
 
-# ═════════════════════════════════════════════════════════════════════════════
-# MAIN
-# ═════════════════════════════════════════════════════════════════════════════
-def run(output_path=DEFAULT_OUTPUT):
-    """Run all synthetic evaluations, print tables, and save JSON results."""
+def run(output_path: Path = DEFAULT_OUTPUT) -> dict[str, Any]:
+    """Run the synthetic evaluation and save the JSON report."""
     validate_paper_configuration()
     scenarios = build_scenarios()
-    post_warmup = N - WARMUP  # 96 post-warmup samples
+    post_warmup = N - WARMUP
+    results: dict[str, Any] = {}
 
-    results = {}
-
-    # ── TABLE 1 & 2: Metric classification + distributional stats ────────────
     print("\n" + "=" * 70)
     print("TABLE 1 & 2: METRIC CLASSIFICATION AND DISTRIBUTIONAL STATISTICS")
     print("=" * 70)
@@ -288,18 +250,18 @@ def run(output_path=DEFAULT_OUTPUT):
     )
     print("-" * 100)
 
-    table1 = []
+    table1: list[dict[str, Any]] = []
     for name, series, exp_risk, exp_trend in scenarios:
         out = compute_metrics(series, window_sec=86400)
         stab = out["interactionStability"]
         vol = out["signalVolatility"]
         risk = out["trustContinuityRiskLevel"]
         trend = out["sentinelTrend"]
-        mr = "✓" if risk == exp_risk else "✗"
-        mt = "✓" if trend == exp_trend else "✗"
+        risk_match = "✓" if risk == exp_risk else "✗"
+        trend_match = "✓" if trend == exp_trend else "✗"
 
         print(
-            f"{name:<32} {stab:>10.4f} {vol:>11.4f} {risk:<10} {trend:<15} {exp_risk:<10} {exp_trend} {mr}{mt}"
+            f"{name:<32} {stab:>10.4f} {vol:>11.4f} {risk:<10} {trend:<15} {exp_risk:<10} {exp_trend} {risk_match}{trend_match}"
         )
 
         table1.append(
@@ -315,14 +277,13 @@ def run(output_path=DEFAULT_OUTPUT):
                 "true_stdev": round(pstdev(series), 4),
                 "exp_risk": exp_risk,
                 "exp_trend": exp_trend,
-                "risk_match": mr,
-                "trend_match": mt,
+                "risk_match": risk_match,
+                "trend_match": trend_match,
             }
         )
 
     results["table1_and_2"] = table1
 
-    # ── TABLE 3: Drift Sentry alert emission ──────────────────────────────────
     print("\n" + "=" * 70)
     print("TABLE 3: DRIFT SENTRY ALERT EMISSION BY MIN-LEVEL CONFIGURATION")
     print("=" * 70)
@@ -334,18 +295,14 @@ def run(output_path=DEFAULT_OUTPUT):
     table3 = []
     for row in table1:
         risk = row["trustContinuityRiskLevel"]
-        fires = {
-            lvl: drift_sentry_fires(risk, lvl) for lvl in ("low", "medium", "high")
-        }
+        fires = {level: drift_sentry_fires(risk, level) for level in ("low", "medium", "high")}
         print(
             f"{row['scenario']:<32} {risk:<10} {'Yes' if fires['low'] else 'No':>8} "
             f"{'Yes' if fires['medium'] else 'No':>12} {'Yes' if fires['high'] else 'No':>10}"
         )
         table3.append({"scenario": row["scenario"], "risk": risk, **fires})
-
     results["table3"] = table3
 
-    # ── TABLE 4: Threshold boundary verification ──────────────────────────────
     print("\n" + "=" * 70)
     print("TABLE 4: THRESHOLD BOUNDARY VERIFICATION")
     print(f"tau_warn={TAU_WARN}, tau_critical={TAU_CRITICAL}")
@@ -366,21 +323,19 @@ def run(output_path=DEFAULT_OUTPUT):
     for label, target_cv in boundary_cases:
         series = build_boundary_series(target_cv)
         out = compute_metrics(series, window_sec=86400)
-        comp_cv = out["signalVolatility"]
+        computed_cv = out["signalVolatility"]
         risk = out["trustContinuityRiskLevel"]
-        print(f"{label:<40} {target_cv:>10.3f} {comp_cv:>12.4f} {risk:<10}")
+        print(f"{label:<40} {target_cv:>10.3f} {computed_cv:>12.4f} {risk:<10}")
         table4.append(
             {
                 "case": label,
                 "target_cv": target_cv,
-                "computed_cv": round(comp_cv, 4),
+                "computed_cv": round(computed_cv, 4),
                 "classified_risk": risk,
             }
         )
-
     results["table4"] = table4
 
-    # ── TABLE 5: EWMA / CUSUM / Sentinel detection behavior ──────────────────
     print("\n" + "=" * 70)
     print("TABLE 5: DETECTION BEHAVIOR — EWMA / CUSUM / SENTINEL")
     print(
@@ -396,11 +351,11 @@ def run(output_path=DEFAULT_OUTPUT):
     print("-" * 115)
 
     table5 = []
-    for name, series, exp_risk, exp_trend in scenarios:
+    for name, series, _, _ in scenarios:
         cf, ca = cusum_detect(series)
         ef, ea = ewma_detect(series)
         out = compute_metrics(series, window_sec=86400)
-        sent = f"{out['trustContinuityRiskLevel']}, {out['sentinelTrend']}"
+        sentinel_label = f"{out['trustContinuityRiskLevel']}, {out['sentinelTrend']}"
         c_far = round(ca / post_warmup, 3)
         e_far = round(ea / post_warmup, 3)
         cf_str = f"s{cf}" if cf else "none"
@@ -408,7 +363,7 @@ def run(output_path=DEFAULT_OUTPUT):
 
         print(
             f"{name:<32} {cf_str:>10} {ca:>10} {c_far:>10.3f} "
-            f"{ef_str:>10} {ea:>10} {e_far:>10.3f} {sent:>20}"
+            f"{ef_str:>10} {ea:>10} {e_far:>10.3f} {sentinel_label:>20}"
         )
 
         table5.append(
@@ -420,13 +375,11 @@ def run(output_path=DEFAULT_OUTPUT):
                 "ewma_first_alert": ef,
                 "ewma_total_alerts": ea,
                 "ewma_far": e_far,
-                "sentinel_classification": sent,
+                "sentinel_classification": sentinel_label,
             }
         )
-
     results["table5"] = table5
 
-    # ── TABLE 6: Mann-Kendall vs sentinelTrend ────────────────────────────────
     print("\n" + "=" * 70)
     print("TABLE 6: MANN-KENDALL TREND TEST vs sentinelTrend (α = 0.05)")
     print("=" * 70)
@@ -436,41 +389,37 @@ def run(output_path=DEFAULT_OUTPUT):
     print("-" * 95)
 
     table6 = []
-    for name, series, exp_risk, exp_trend in scenarios:
-        mk_label, _, z_score, p, sig = mann_kendall(series)
+    for name, series, _, _ in scenarios:
+        mk_label, _, z_score, p_value, significant = mann_kendall(series)
         out = compute_metrics(series, window_sec=86400)
-        sent = out["sentinelTrend"]
-        match = "✓" if mk_label == sent else "✗"
+        sentinel_trend = out["sentinelTrend"]
+        match = "✓" if mk_label == sentinel_trend else "✗"
         print(
-            f"{name:<32} {mk_label:<15} {z_score:>8.3f} {p:>8.4f} "
-            f"{'Yes' if sig else 'No':>5} {sent:<15} {match}"
+            f"{name:<32} {mk_label:<15} {z_score:>8.3f} {p_value:>8.4f} "
+            f"{'Yes' if significant else 'No':>5} {sentinel_trend:<15} {match}"
         )
         table6.append(
             {
                 "scenario": name,
                 "mk_trend": mk_label,
                 "Z": z_score,
-                "p_value": p,
-                "significant": sig,
-                "sentinelTrend": sent,
+                "p_value": p_value,
+                "significant": significant,
+                "sentinelTrend": sentinel_trend,
                 "agreement": match == "✓",
             }
         )
-
     results["table6"] = table6
 
-    # ── Summary ───────────────────────────────────────────────────────────────
     print("\n" + "=" * 70)
     print("SUMMARY")
     print("=" * 70)
-    t1_matches = sum(
-        1 for r in table1 if r["risk_match"] == "✓" and r["trend_match"] == "✓"
-    )
-    mk_matches = sum(1 for r in table6 if r["agreement"])
+    full_matches = sum(1 for row in table1 if row["risk_match"] == "✓" and row["trend_match"] == "✓")
+    mk_matches = sum(1 for row in table6 if row["agreement"])
     cusum_s1 = table5[0]["cusum_far"]
     ewma_s1 = table5[0]["ewma_far"]
 
-    print(f"Table 1 — Full classification match (risk + trend): {t1_matches}/5")
+    print(f"Table 1 — Full classification match (risk + trend): {full_matches}/5")
     print(f"Table 6 — Mann-Kendall vs sentinelTrend agreement: {mk_matches}/5")
     print(
         f"Table 5 — CUSUM FAR on S1 (stable): {cusum_s1:.3f} ({table5[0]['cusum_total_alerts']} alerts/{post_warmup} samples)"
@@ -481,7 +430,7 @@ def run(output_path=DEFAULT_OUTPUT):
     print("Table 5 — Sentinel FAR on S1:        0.000 (0 alerts)")
 
     results["summary"] = {
-        "table1_full_match": f"{t1_matches}/5",
+        "table1_full_match": f"{full_matches}/5",
         "table6_mk_agreement": f"{mk_matches}/5",
         "cusum_far_s1": cusum_s1,
         "ewma_far_s1": ewma_s1,
@@ -497,14 +446,10 @@ def run(output_path=DEFAULT_OUTPUT):
         "cusum_h_sigma": CUSUM_H,
     }
 
-    # ── Save ──────────────────────────────────────────────────────────────────
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    with output_path.open("w", encoding="utf-8") as f:
-        json.dump(results, f, indent=2)
-
-    print(f"\nAll results saved to {output_path}")
-    print("=" * 70)
+    with output_path.open("w", encoding="utf-8") as handle:
+        json.dump(results, handle, indent=2)
     return results
 
 

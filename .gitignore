@@ -32,11 +32,9 @@ artifacts/*
 rolling_store.csv
 *.csv
 *.json
-# Generated evaluation outputs (covered by *.json; listed for clarity)
-eval_cache_v2.json
-eval_results_v2.json
-eval_cache_v3.json
-eval_results_v3.json
+# Generated evaluation outputs (keep scripts tracked; ignore local caches/results)
+eval_cache_*.json
+eval_results_*.json
 synthetic_eval_results.json
 
 # Git and local configs
